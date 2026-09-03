@@ -1,0 +1,6 @@
+{
+  "name": "T'AYO School",
+  "description": "Comprehensive Primary and Secondary School Management System for T'AYO School in Ilorin, Kwara State, Nigeria.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

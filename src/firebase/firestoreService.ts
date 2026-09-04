@@ -131,8 +131,15 @@ export const FirestoreService = {
         phone1: '09076930244',
         phone2: '09076930244',
         email: 'admissions@tayoschool.edu.ng',
-        admissionsOpen: true
-      });
+        admissionsOpen: true,
+        principalName: 'Dr. (Mrs.) Folashade O. Adeyinka',
+        principalTitle: 'Principal & Director',
+        principalQualifications: 'B.Ed, M.Ed (Educational Management, Unilorin), Ph.D, TRCN',
+        principalPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80',
+        principalWelcomeQuote: '"We Do Not Just Educate; We Mould Character and Build Destinies."',
+        principalMessage1: "At T'AYO School in Ilorin, Kwara State, we consider education a sacred trust. Our holistic educational curriculum integrates national standards with international best practices, giving each pupil and student a solid foundation in numeracy, literacy, critical inquiry, digital fluency, and cultural appreciation.",
+        principalMessage2: 'Whether inside our modern science laboratories, on the athletic field, or in leadership roles, our children are nurtured to excel with humility, empathy, and resilience. We welcome you to experience the T\'AYO family.'
+      }, { merge: true });
 
       const sessionRef = doc(db, COLLECTIONS.ACADEMIC_SESSIONS, '2024_2025');
       batch.set(sessionRef, {
@@ -171,8 +178,11 @@ export const FirestoreService = {
   async saveStudent(student: Student): Promise<void> {
     if (!isFirebaseInitialized || !db) return;
     try {
+      const dataToSave = { ...student };
+      // Security: NEVER persist plain-text passwords to Firestore
+      delete (dataToSave as any).password;
       const ref = doc(db, COLLECTIONS.STUDENTS, student.id);
-      await setDoc(ref, student, { merge: true });
+      await setDoc(ref, dataToSave, { merge: true });
     } catch (err) {
       console.warn(`Error saving student ${student.id} to Firestore:`, err);
     }
@@ -205,8 +215,10 @@ export const FirestoreService = {
   async saveStaff(staffMember: Staff): Promise<void> {
     if (!isFirebaseInitialized || !db) return;
     try {
+      const dataToSave = { ...staffMember };
+      delete (dataToSave as any).password;
       const ref = doc(db, COLLECTIONS.STAFF, staffMember.id);
-      await setDoc(ref, staffMember, { merge: true });
+      await setDoc(ref, dataToSave, { merge: true });
     } catch (err) {
       console.warn(`Error saving staff ${staffMember.id} to Firestore:`, err);
     }
@@ -239,8 +251,10 @@ export const FirestoreService = {
   async saveAdministrator(admin: Administrator): Promise<void> {
     if (!isFirebaseInitialized || !db) return;
     try {
+      const dataToSave = { ...admin };
+      delete (dataToSave as any).password;
       const ref = doc(db, COLLECTIONS.ADMINISTRATORS, admin.id);
-      await setDoc(ref, admin, { merge: true });
+      await setDoc(ref, dataToSave, { merge: true });
     } catch (err) {
       console.warn(`Error saving administrator ${admin.id} to Firestore:`, err);
     }
@@ -450,6 +464,20 @@ export const FirestoreService = {
       });
     } catch (err) {
       console.warn('Error subscribing to fee payments:', err);
+      return null;
+    }
+  },
+
+  subscribeToConfig(onUpdate: (cfg: SchoolConfig) => void): Unsubscribe | null {
+    if (!isFirebaseInitialized || !db) return null;
+    try {
+      return onSnapshot(doc(db, COLLECTIONS.SCHOOL_CONFIG, 'current'), snap => {
+        if (snap.exists()) {
+          onUpdate(snap.data() as SchoolConfig);
+        }
+      });
+    } catch (err) {
+      console.warn('Error subscribing to school config:', err);
       return null;
     }
   }

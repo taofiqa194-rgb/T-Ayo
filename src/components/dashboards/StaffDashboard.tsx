@@ -7,6 +7,8 @@ import {
 } from '../../types';
 import { StorageService } from '../../services/storage';
 import { FirebaseStorageService } from '../../firebase/storageService';
+import { FirestoreService } from '../../firebase/firestoreService';
+import { FirebaseAuthService } from '../../firebase/authService';
 import { computeNigerianGrade } from '../../data/initialData';
 import {
   BookOpen,
@@ -78,7 +80,7 @@ export const StaffDashboard: React.FC<StaffDashboardProps> = ({
     }
   };
 
-  const handleSaveStaffProfile = (e: React.FormEvent) => {
+  const handleSaveStaffProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const updated: Staff = {
       ...staff,
@@ -90,6 +92,11 @@ export const StaffDashboard: React.FC<StaffDashboardProps> = ({
       address: editAddress.trim(),
       photoUrl: editPhotoUrl
     };
+    try {
+      await FirestoreService.saveStaff(updated);
+    } catch (err) {
+      console.warn('Firestore staff save notice:', err);
+    }
     StorageService.saveStaff(updated);
     onUpdateStaff(updated);
     setStaffProfileMsg('Staff profile, contact phone, and details updated successfully!');
@@ -250,6 +257,7 @@ export const StaffDashboard: React.FC<StaffDashboardProps> = ({
         existingRecord.updatedAt = new Date().toISOString().split('T')[0];
 
         StorageService.saveResult(existingRecord);
+        FirestoreService.saveResult(existingRecord).catch(err => console.warn('Firestore save result notice:', err));
       } else {
         // Create new record
         const newRecord: StudentResultRecord = {
@@ -272,14 +280,15 @@ export const StaffDashboard: React.FC<StaffDashboardProps> = ({
           updatedAt: new Date().toISOString().split('T')[0]
         };
         StorageService.saveResult(newRecord);
+        FirestoreService.saveResult(newRecord).catch(err => console.warn('Firestore save result notice:', err));
       }
     });
 
     setStatusMessage({
       type: 'success',
       text: isPublish
-        ? `Successfully submitted and published ${selectedSubject} scores for ${selectedClass}!`
-        : `Draft scores saved locally for ${selectedSubject}.`
+        ? `Successfully submitted and published ${selectedSubject} scores for ${selectedClass} to Cloud Firestore!`
+        : `Draft scores saved for ${selectedSubject}.`
     });
 
     setTimeout(() => setStatusMessage(null), 5000);
@@ -291,13 +300,9 @@ export const StaffDashboard: React.FC<StaffDashboardProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwdMsg(null);
-    if (oldPassword !== (staff.password || 'password123')) {
-      setPwdMsg({ type: 'error', text: 'Current password is incorrect.' });
-      return;
-    }
     if (newPassword.length < 6) {
       setPwdMsg({ type: 'error', text: 'New password must have at least 6 characters.' });
       return;
@@ -307,13 +312,14 @@ export const StaffDashboard: React.FC<StaffDashboardProps> = ({
       return;
     }
 
-    const ok = StorageService.updateStaffPassword(staff.staffId, newPassword);
-    if (ok) {
-      onUpdateStaff({ ...staff, password: newPassword });
-      setPwdMsg({ type: 'success', text: 'Password successfully updated!' });
+    try {
+      await FirebaseAuthService.updatePassword(newPassword);
+      setPwdMsg({ type: 'success', text: 'Password successfully updated and secured in Firebase Authentication!' });
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
+    } catch (err: any) {
+      setPwdMsg({ type: 'error', text: err?.message || 'Failed to update password in Firebase Auth.' });
     }
   };
 

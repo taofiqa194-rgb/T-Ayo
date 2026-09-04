@@ -1,0 +1,70 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        request.auth.token.email == 'admin@tayoschool.edu.ng' ||
+        request.auth.token.email == 'adebayofaoziyyah1@gmail.com'
+      );
+    }
+
+    function isStaff() {
+      return isAuthenticated() && (
+        isAdmin() ||
+        request.auth.token.role == 'staff'
+      );
+    }
+
+    // Student passports: Admin, Staff, or the student themselves can read
+    match /students/{studentNumber}/{fileName} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isStaff() ||
+        (request.auth.token.studentNumber != null && request.auth.token.studentNumber == studentNumber) ||
+        (request.auth.token.email != null && request.auth.token.email.matches('.*' + studentNumber.lower().replace('[^a-z0-9]', '_') + '.*'))
+      );
+      allow write: if isAuthenticated() && (isAdmin() || isStaff());
+    }
+
+    // Staff passports: Admin or the staff themselves can read
+    match /staff/{staffId}/{fileName} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isStaff() ||
+        (request.auth.token.email != null && request.auth.token.email.matches('.*' + staffId.lower().replace('[^a-z0-9]', '_') + '.*'))
+      );
+      allow write: if isAuthenticated() && (isAdmin() || isStaff());
+    }
+
+    // Administrator passports: Authenticated staff/admin can read; Admin can write
+    match /administrators/{adminId}/{fileName} {
+      allow read: if isAuthenticated() && (isAdmin() || isStaff());
+      allow write: if isAdmin();
+    }
+
+    // Public school branding, principal portrait, and campus photos
+    match /school/{fileName} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Admission documents: Public prospective applicants can upload (limit 5MB); Admins can read & manage
+    match /admission_documents/{applicationNumber}/{fileName} {
+      allow create: if request.resource.size < 5 * 1024 * 1024;
+      allow read: if isAuthenticated() && (isAdmin() || isStaff());
+      allow update, delete: if isAdmin();
+    }
+
+    // Default fallback
+    match /{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}

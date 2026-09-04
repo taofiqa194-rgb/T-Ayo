@@ -1,6 +1,22 @@
 import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 import { storage, isFirebaseInitialized } from './config';
 
+// Helper: Convert File or Blob to persistent base64 data URL if storage upload fails or is offline
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Failed to read file as data URL'));
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export const FirebaseStorageService = {
   /**
    * Upload a student passport photo to Firebase Storage
@@ -33,6 +49,15 @@ export const FirebaseStorageService = {
   },
 
   /**
+   * Upload the official school principal portrait to Firebase Storage
+   * Path: school/principal_portrait_{timestamp}
+   */
+  async uploadPrincipalPortrait(fileOrDataUrl: File | Blob | string): Promise<string> {
+    const path = `school/principal_portrait_${Date.now()}`;
+    return this.uploadFile(path, fileOrDataUrl, 'image/jpeg');
+  },
+
+  /**
    * Upload admission documents (birth certificate, report card, passport) to Firebase Storage
    * Path: admission_documents/{applicationNumber}/{docName}_{timestamp}
    */
@@ -44,12 +69,12 @@ export const FirebaseStorageService = {
   },
 
   /**
-   * Generic file uploader to Firebase Storage with intelligent fallback
+   * Generic file uploader to Firebase Storage with persistent fallback
    */
   async uploadFile(path: string, fileOrDataUrl: File | Blob | string, defaultContentType = 'application/octet-stream'): Promise<string> {
     if (!isFirebaseInitialized || !storage) {
       if (typeof fileOrDataUrl === 'string') return fileOrDataUrl;
-      return URL.createObjectURL(fileOrDataUrl);
+      return await blobToBase64(fileOrDataUrl);
     }
 
     try {
@@ -70,11 +95,11 @@ export const FirebaseStorageService = {
 
       return await getDownloadURL(storageRef);
     } catch (error) {
-      console.warn(`Firebase Storage upload to ${path} encountered issue, using fallback preview:`, error);
+      console.warn(`Firebase Storage upload to ${path} encountered issue, using persistent fallback:`, error);
       if (typeof fileOrDataUrl === 'string') {
         return fileOrDataUrl;
       }
-      return URL.createObjectURL(fileOrDataUrl);
+      return await blobToBase64(fileOrDataUrl);
     }
   }
 };

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   GraduationCap,
   Award,
@@ -12,18 +12,32 @@ import {
   Phone,
   CheckCircle2,
   ArrowRight,
-  ExternalLink
+  ExternalLink,
+  Baby
 } from 'lucide-react';
-import { PageId, Announcement, GalleryItem } from '../../types';
+import { PageId, Announcement, GalleryItem, SchoolConfig } from '../../types';
 import { StorageService } from '../../services/storage';
+import { FirestoreService } from '../../firebase/firestoreService';
 
 interface HomePageProps {
   onNavigate: (page: PageId) => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
+  const [config, setConfig] = useState<SchoolConfig>(() => StorageService.getConfig());
   const announcements = StorageService.getAnnouncements().slice(0, 3);
   const galleryItems = StorageService.getGallery().slice(0, 4);
+
+  useEffect(() => {
+    const unsub = FirestoreService.subscribeToConfig((updated) => {
+      if (updated) {
+        setConfig(prev => ({ ...prev, ...updated }));
+      }
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
 
   return (
     <div className="space-y-16 sm:space-y-24 pb-16">
@@ -34,8 +48,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
             {/* Left text & announcement box */}
             <div className="lg:col-span-7 flex flex-col justify-between space-y-8">
               <div>
-                <div className="inline-block px-3.5 py-1.5 bg-[#008751]/10 text-[#008751] rounded-full text-xs font-bold mb-6 uppercase tracking-wider">
-                  2024/2025 Admissions are Open
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-[#008751]/10 text-[#008751] rounded-full text-xs font-bold mb-6 uppercase tracking-wider">
+                  <span className="w-2 h-2 rounded-full bg-[#008751] animate-pulse"></span>
+                  <span>{config.activeSession} Academic Session • {config.activeTerm} {config.admissionsOpen ? '• Admissions Open' : ''}</span>
                 </div>
 
                 <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-slate-900 leading-[0.92] tracking-tighter mb-6 font-display uppercase">
@@ -45,7 +60,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                 </h1>
 
                 <p className="text-slate-500 text-base sm:text-lg leading-relaxed max-w-lg mb-8 font-normal">
-                  T'AYO School provides a nurturing environment for Primary and Secondary education in the heart of Ilorin, Kwara State. Excellence in Character and Learning.
+                  T'AYO School provides a nurturing foundation across <strong>Nursery, Primary, and Secondary</strong> education in the heart of Ilorin, Kwara State. Excellence in Character, Discipline, and Learning.
                 </p>
 
                 <div className="flex flex-wrap gap-4">
@@ -227,16 +242,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
         <div className="bg-slate-50 rounded-3xl border border-slate-200 p-8 sm:p-12 grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
           <div className="lg:col-span-5 flex justify-center">
             <div className="relative">
-              <div className="w-64 h-80 sm:w-72 sm:h-96 rounded-2xl overflow-hidden shadow-md border-4 border-white">
+              <div className="w-64 h-80 sm:w-72 sm:h-96 rounded-2xl overflow-hidden shadow-md border-4 border-white bg-slate-200">
                 <img
-                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80"
-                  alt="Dr. Folashade Adeyinka, Principal T'AYO School"
+                  src={config.principalPhotoUrl || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80"}
+                  alt={`${config.principalName || 'Principal'}, Principal T'AYO School`}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
                 />
               </div>
               <div className="absolute -bottom-4 right-2 bg-[#003087] text-white px-4 py-2 rounded-xl shadow-md text-xs font-black tracking-wider uppercase">
-                Principal & Director
+                {config.principalTitle || "Principal & Director"}
               </div>
             </div>
           </div>
@@ -246,25 +261,29 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
               <span>Principal's Welcome Address</span>
             </div>
             <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 font-display tracking-tight leading-tight">
-              "We Do Not Just Educate; We Mould Character and Build Destinies."
+              {config.principalWelcomeQuote || '"We Do Not Just Educate; We Mould Character and Build Destinies."'}
             </h2>
             <p className="text-sm sm:text-base text-slate-600 leading-relaxed font-normal">
-              At <strong>T'AYO School</strong> in Ilorin, Kwara State, we consider education a sacred trust. Our holistic educational curriculum integrates national standards with international best practices, giving each pupil and student a solid foundation in numeracy, literacy, critical inquiry, digital fluency, and cultural appreciation.
+              {config.principalMessage1 || (
+                <>At <strong>T'AYO School</strong> in Ilorin, Kwara State, we consider education a sacred trust. Our holistic educational curriculum integrates national standards with international best practices, giving each pupil and student a solid foundation in numeracy, literacy, critical inquiry, digital fluency, and cultural appreciation.</>
+              )}
             </p>
             <p className="text-sm text-slate-600 leading-relaxed font-normal">
-              Whether inside our modern science laboratories, on the athletic field, or in leadership roles, our children are nurtured to excel with humility, empathy, and resilience. We welcome you to experience the T'AYO family.
+              {config.principalMessage2 || (
+                <>Whether inside our modern science laboratories, on the athletic field, or in leadership roles, our children are nurtured to excel with humility, empathy, and resilience. We welcome you to experience the T'AYO family.</>
+              )}
             </p>
             <div className="pt-2">
-              <h4 className="font-black text-slate-900 text-base">Dr. (Mrs.) Folashade O. Adeyinka</h4>
+              <h4 className="font-black text-slate-900 text-base">{config.principalName || "Dr. (Mrs.) Folashade O. Adeyinka"}</h4>
               <p className="text-xs text-slate-500 font-semibold">
-                B.Ed, M.Ed (Educational Management, Unilorin), Ph.D, TRCN
+                {config.principalQualifications || "B.Ed, M.Ed (Educational Management, Unilorin), Ph.D, TRCN"}
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 4. SCHOOL SECTIONS (PRIMARY & SECONDARY) */}
+      {/* 4. SCHOOL SECTIONS (NURSERY, PRIMARY & SECONDARY) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         <div className="text-center max-w-2xl mx-auto space-y-2">
           <p className="text-xs font-black text-[#008751] uppercase tracking-widest">Instructional Excellence</p>
@@ -272,14 +291,63 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
             Our Academic Divisions
           </h2>
           <p className="text-sm text-slate-500 font-normal">
-            Tailored instructional methodologies designed for each phase of child and youth development.
+            Tailored instructional methodologies designed for each phase of child and youth development across Nursery, Primary, and Secondary education.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {/* Nursery & Early Years Section */}
+          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+            <div className="h-52 overflow-hidden relative">
+              <img
+                src="https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=800&auto=format&fit=crop&q=80"
+                alt="Nursery and Early Years Pupils"
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+              <span className="absolute top-4 left-4 px-3 py-1 rounded-full bg-amber-500 text-white text-xs font-black shadow-sm tracking-wider uppercase">
+                Nursery & Creche
+              </span>
+            </div>
+            <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
+              <div>
+                <h3 className="text-xl font-black text-slate-900 font-display">
+                  Nursery & Early Childhood
+                </h3>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                  Creche, Playgroup, KG 1-2, and Nursery classes nurturing early cognitive, emotional, and fine-motor development through structured play.
+                </p>
+                <ul className="mt-4 space-y-2 text-xs text-slate-700 font-bold">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Jolly Phonics & Early Literacy</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Sensory & Montessori Play Corners</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Hygienic Creche & Daycare Suites</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="pt-4">
+                <button
+                  onClick={() => onNavigate('primary')}
+                  className="w-full py-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer uppercase tracking-wider"
+                >
+                  <span>Explore Early Years</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Primary Section */}
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
-            <div className="h-56 overflow-hidden relative">
+            <div className="h-52 overflow-hidden relative">
               <img
                 src="https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&auto=format&fit=crop&q=80"
                 alt="Primary Pupils"
@@ -287,37 +355,37 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                 referrerPolicy="no-referrer"
               />
               <span className="absolute top-4 left-4 px-3 py-1 rounded-full bg-[#008751] text-white text-xs font-black shadow-sm tracking-wider uppercase">
-                Primary Section (Creche to Pry 6)
+                Primary Section (Basic 1 - 6)
               </span>
             </div>
-            <div className="p-6 sm:p-8 space-y-4 flex-1 flex flex-col justify-between">
+            <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
               <div>
-                <h3 className="text-2xl font-black text-slate-900 font-display">
-                  T'AYO Primary & Early Years
+                <h3 className="text-xl font-black text-slate-900 font-display">
+                  T'AYO Primary School
                 </h3>
-                <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                  Igniting a love for learning through phonics, numeracy, hands-on STEAM exploration, creative arts, and foundational civic virtues in a safe, caring setting.
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                  Igniting a love for learning through numeracy, hands-on STEAM exploration, creative arts, and foundational civic virtues.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-slate-700 font-bold">
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-[#008751] shrink-0" />
-                    <span>Montessori-adapted Early Years & Creche</span>
+                    <span>Verbal & Quantitative Reasoning</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-[#008751] shrink-0" />
-                    <span>Literacy & Verbal/Quantitative Reasoning Masterclass</span>
+                    <span>Junior Science, Coding & Robotics</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-[#008751] shrink-0" />
-                    <span>Robotics, Coding & Junior Science Club</span>
+                    <span>National Common Entrance Prep</span>
                   </li>
                 </ul>
               </div>
 
-              <div className="pt-6">
+              <div className="pt-4">
                 <button
                   onClick={() => onNavigate('primary')}
-                  className="w-full py-3.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-[#008751] font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer uppercase tracking-wider"
+                  className="w-full py-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-[#008751] font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer uppercase tracking-wider"
                 >
                   <span>Explore Primary School</span>
                   <ChevronRight className="w-4 h-4" />
@@ -328,7 +396,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
 
           {/* Secondary Section */}
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
-            <div className="h-56 overflow-hidden relative">
+            <div className="h-52 overflow-hidden relative">
               <img
                 src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800&auto=format&fit=crop&q=80"
                 alt="Secondary Students"
@@ -336,37 +404,37 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                 referrerPolicy="no-referrer"
               />
               <span className="absolute top-4 left-4 px-3 py-1 rounded-full bg-[#003087] text-white text-xs font-black shadow-sm tracking-wider uppercase">
-                Secondary Section (JSS 1 - SSS 3)
+                Secondary (JSS 1 - SSS 3)
               </span>
             </div>
-            <div className="p-6 sm:p-8 space-y-4 flex-1 flex flex-col justify-between">
+            <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
               <div>
-                <h3 className="text-2xl font-black text-slate-900 font-display">
-                  T'AYO Secondary School (Junior & Senior)
+                <h3 className="text-xl font-black text-slate-900 font-display">
+                  T'AYO Secondary School
                 </h3>
-                <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                  Rigorous preparation for WAEC, NECO, and UTME/JAMB exams with specialized streams in Pure Science, Humanities/Arts, and Commercial disciplines.
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                  Rigorous preparation for WAEC, NECO, and UTME/JAMB exams with specialized streams in Sciences, Arts, and Commercial disciplines.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-slate-700 font-bold">
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-[#003087] shrink-0" />
-                    <span>State-of-the-art Chemistry, Physics & Biology Labs</span>
+                    <span>Equipped Chemistry, Physics & Biology Labs</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-[#003087] shrink-0" />
-                    <span>CBT Computer Practice Suites for JAMB & WAEC</span>
+                    <span>CBT Computer Practice Suites</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-[#003087] shrink-0" />
-                    <span>Intensive Career Guidance & University Placement</span>
+                    <span>University Placement & Mentorship</span>
                   </li>
                 </ul>
               </div>
 
-              <div className="pt-6">
+              <div className="pt-4">
                 <button
                   onClick={() => onNavigate('secondary')}
-                  className="w-full py-3.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#003087] font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer uppercase tracking-wider"
+                  className="w-full py-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#003087] font-black text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer uppercase tracking-wider"
                 >
                   <span>Explore Secondary School</span>
                   <ChevronRight className="w-4 h-4" />

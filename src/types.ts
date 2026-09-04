@@ -1,10 +1,11 @@
 export type UserRole = 'student' | 'staff' | 'admin';
 
-export type SchoolSection = 'primary' | 'secondary';
+export type SchoolSection = 'nursery' | 'primary' | 'secondary';
 
 export interface Student {
   id: string;
   studentNumber: string; // e.g. TAYO/2024/001
+  authUid?: string; // Firebase Authentication UID
   password?: string;
   firstName: string;
   lastName: string;
@@ -23,12 +24,13 @@ export interface Student {
   guardianEmail: string;
   guardianRelationship: string;
   address: string;
-  stateOfOrigin: string;
+  stateOfOrigin?: string;
 }
 
 export interface Staff {
   id: string;
   staffId: string; // e.g. STF-012
+  authUid?: string; // Firebase Authentication UID
   email: string;
   password?: string;
   fullName: string;
@@ -42,18 +44,38 @@ export interface Staff {
   photoUrl: string;
   address?: string;
   joinedDate: string;
+  status?: 'Active' | 'Suspended' | 'Inactive';
 }
 
 export interface Administrator {
   id: string;
   adminId: string;
+  authUid?: string; // Firebase Authentication UID
   fullName: string;
   email: string;
   phone?: string;
   password?: string;
-  role: 'Super Administrator' | 'Academic Principal' | 'Registrar';
+  role: 'Super Administrator' | 'Academic Principal' | 'Registrar' | 'Head of Administration';
   photoUrl: string;
   lastLogin?: string;
+}
+
+export interface SchoolConfig {
+  activeSession: string; // e.g. "2024/2025" or "2025/2026"
+  activeTerm: '1st Term' | '2nd Term' | '3rd Term';
+  schoolName: string;
+  location: string;
+  phone1: string;
+  phone2: string;
+  email: string;
+  admissionsOpen: boolean;
+  principalName?: string;
+  principalTitle?: string;
+  principalQualifications?: string;
+  principalPhotoUrl?: string;
+  principalWelcomeQuote?: string;
+  principalMessage1?: string;
+  principalMessage2?: string;
 }
 
 export interface FeeItem {

@@ -22,6 +22,8 @@ import {
 import { Student, StudentResultRecord, Announcement } from '../../types';
 import { StorageService } from '../../services/storage';
 import { FirebaseStorageService } from '../../firebase/storageService';
+import { FirestoreService } from '../../firebase/firestoreService';
+import { FirebaseAuthService } from '../../firebase/authService';
 import { ReportCardModal } from './ReportCardModal';
 import { FeePaymentSection } from './FeePaymentSection';
 
@@ -57,7 +59,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoUploadMsg, setPhotoUploadMsg] = useState<string | null>(null);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const updated: Student = {
       ...student,
@@ -66,6 +68,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       guardianName: editGuardianName.trim(),
       guardianRelationship: editGuardianRelationship.trim()
     };
+    try {
+      await FirestoreService.saveStudent(updated);
+    } catch (err) {
+      console.warn('Firestore sync notice:', err);
+    }
     StorageService.saveStudent(updated);
     onUpdateStudent(updated);
     setIsEditingProfile(false);
@@ -90,27 +97,27 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       try {
         const photoUrl = await FirebaseStorageService.uploadStudentPassport(student.studentNumber, file);
         setPhotoPreview(photoUrl);
-        const success = StorageService.updateStudentPhoto(student.studentNumber, photoUrl);
-        if (success) {
-          const updated = { ...student, photoUrl };
-          onUpdateStudent(updated);
-          setPhotoUploadMsg('Passport photograph saved and uploaded to Firebase Storage!');
-          setTimeout(() => setPhotoUploadMsg(null), 4000);
+        const updated: Student = { ...student, photoUrl };
+        try {
+          await FirestoreService.saveStudent(updated);
+        } catch (fErr) {
+          console.warn('Firestore photo save notice:', fErr);
         }
-      } catch (err) {
+        StorageService.updateStudentPhoto(student.studentNumber, photoUrl);
+        onUpdateStudent(updated);
+        setPhotoUploadMsg('Passport photograph saved and uploaded to Firebase Storage!');
+        setTimeout(() => setPhotoUploadMsg(null), 4000);
+      } catch (err: any) {
         console.warn('Firebase upload notice:', err);
+        setPhotoUploadMsg('Upload failed: ' + (err?.message || 'Could not upload to storage.'));
       }
     }
   };
 
-  const handlePasswordChange = (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordMsg(null);
 
-    if (currentPassword !== (student.password || 'password123')) {
-      setPasswordMsg({ type: 'error', text: 'Current password does not match.' });
-      return;
-    }
     if (newPassword.length < 6) {
       setPasswordMsg({ type: 'error', text: 'New password must be at least 6 characters long.' });
       return;
@@ -120,15 +127,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       return;
     }
 
-    const ok = StorageService.updateStudentPassword(student.studentNumber, newPassword);
-    if (ok) {
-      onUpdateStudent({ ...student, password: newPassword });
-      setPasswordMsg({ type: 'success', text: 'Password successfully changed!' });
+    try {
+      await FirebaseAuthService.updatePassword(newPassword);
+      setPasswordMsg({ type: 'success', text: 'Password successfully changed and secured in Firebase Authentication!' });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-    } else {
-      setPasswordMsg({ type: 'error', text: 'Failed to update password.' });
+    } catch (err: any) {
+      setPasswordMsg({ type: 'error', text: err?.message || 'Failed to update password in Firebase Auth.' });
     }
   };
 

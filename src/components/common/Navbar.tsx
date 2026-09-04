@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   GraduationCap,
   Menu,
@@ -11,9 +11,12 @@ import {
   Shield,
   BookOpen,
   LogOut,
-  LayoutDashboard
+  LayoutDashboard,
+  Calendar
 } from 'lucide-react';
-import { PageId, UserRole } from '../../types';
+import { PageId, UserRole, SchoolConfig } from '../../types';
+import { StorageService } from '../../services/storage';
+import { FirestoreService } from '../../firebase/firestoreService';
 
 interface NavbarProps {
   currentPage: PageId;
@@ -42,6 +45,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   const currentUser = loggedInUser || propCurrentUser || null;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [portalDropdownOpen, setPortalDropdownOpen] = useState(false);
+  const [config, setConfig] = useState<SchoolConfig>(() => StorageService.getConfig());
+
+  useEffect(() => {
+    const unsub = FirestoreService.subscribeToConfig((updated) => {
+      if (updated) {
+        setConfig(prev => ({ ...prev, ...updated }));
+      }
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
 
   const navItems: { label: string; page: PageId }[] = [
     { label: 'Home', page: 'home' },
@@ -75,23 +90,29 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 text-slate-300">
             <span className="flex items-center gap-1.5 hover:text-emerald-400 transition-colors">
               <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-              Tanke / GRA, Ilorin, Kwara State
+              {config.location || "Tanke / GRA, Ilorin, Kwara State"}
             </span>
-            <a href="tel:09076930244" className="flex items-center gap-1.5 hover:text-blue-300 transition-colors">
+            <a href={`tel:${config.phone1 || '09076930244'}`} className="flex items-center gap-1.5 hover:text-blue-300 transition-colors">
               <Phone className="w-3.5 h-3.5 text-blue-400" />
-              09076930244
+              {config.phone1 || '09076930244'}
             </a>
-            <a href="mailto:info@tayoschool.edu.ng" className="hidden md:flex items-center gap-1.5 hover:text-blue-300 transition-colors">
+            <a href={`mailto:${config.email || 'info@tayoschool.edu.ng'}`} className="hidden md:flex items-center gap-1.5 hover:text-blue-300 transition-colors">
               <Mail className="w-3.5 h-3.5 text-blue-400" />
-              info@tayoschool.edu.ng
+              {config.email || 'info@tayoschool.edu.ng'}
             </a>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-950 text-emerald-300 border border-emerald-800/60">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
-              2024/2025 Admissions Open
-            </span>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-950 text-blue-300 border border-blue-800/60">
+              <Calendar className="w-3 h-3 text-blue-400" />
+              <span>{config.activeSession} Session • {config.activeTerm}</span>
+            </div>
+            {config.admissionsOpen && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-950 text-emerald-300 border border-emerald-800/60">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
+                Admissions Open
+              </span>
+            )}
             {currentUser && (
               <span className="text-slate-300 hidden sm:inline">
                 Logged in as <strong className="text-white capitalize">{currentUser.role}</strong>

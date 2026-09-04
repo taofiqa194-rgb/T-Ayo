@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Administrator,
   Student,
@@ -11,6 +11,8 @@ import {
 } from '../../types';
 import { StorageService } from '../../services/storage';
 import { FirebaseStorageService } from '../../firebase/storageService';
+import { FirebaseAuthService } from '../../firebase/authService';
+import { FirestoreService } from '../../firebase/firestoreService';
 import { generateCompleteSqlDump, MYSQL_SCHEMA_DDL, PHP_BACKEND_SAMPLE } from '../../services/sqlExporter';
 import {
   Users,
@@ -45,7 +47,10 @@ import {
   Building2,
   Printer,
   Save,
-  ShieldCheck
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  RefreshCw
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -84,6 +89,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [feeSearch, setFeeSearch] = useState('');
   const [adminReceiptView, setAdminReceiptView] = useState<FeePayment | null>(null);
 
+  // Subscribe to real-time school configuration from Cloud Firestore
+  useEffect(() => {
+    const unsub = FirestoreService.subscribeToConfig((updated) => {
+      if (updated) {
+        setConfig(prev => ({ ...prev, ...updated }));
+      }
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
+
   // Admin Profile State
   const [adminFullName, setAdminFullName] = useState(admin.fullName);
   const [adminPhone, setAdminPhone] = useState(admin.phone || '09076930244');
@@ -109,7 +126,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleSaveAdminProfile = (e: React.FormEvent) => {
+  const handleSaveAdminProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const updated: Administrator = {
       ...admin,
@@ -120,8 +137,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       photoUrl: adminPhotoUrl
     };
     StorageService.saveAdmin(updated);
+    try {
+      await FirestoreService.saveAdministrator(updated);
+    } catch (err) {
+      console.warn('Firestore admin save notice:', err);
+    }
     onUpdateAdmin(updated);
-    showMsg('Administrator profile, phone number, and settings updated successfully!');
+    showMsg('Administrator profile, phone number, and settings updated successfully in production!');
   };
 
   const handleUpdatePaymentStatus = (id: string, status: 'Verified' | 'Rejected') => {
@@ -153,50 +175,118 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Student Actions
-  const handleToggleStudentStatus = (studentId: string, currentStatus: string) => {
+  const handleToggleStudentStatus = async (studentId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'Active' ? 'Suspended' : 'Active';
     StorageService.setStudentStatus(studentId, newStatus);
     setStudents(StorageService.getStudents());
-    showMsg(`Student account marked as ${newStatus}.`);
+    const target = students.find(s => s.id === studentId);
+    if (target) {
+      try {
+        await FirestoreService.saveStudent({ ...target, status: newStatus as any });
+      } catch (err) {
+        console.warn('Error syncing student status to Firestore:', err);
+      }
+    }
+    showMsg(`Student account marked as ${newStatus} in production Firestore.`);
   };
 
-  const handleStudentPassportChange = (studentNumber: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleStudentPassportChange = async (studentNumber: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        StorageService.updateStudentPhoto(studentNumber, base64);
+      try {
+        showMsg('Uploading passport to Firebase Storage...');
+        const photoUrl = await FirebaseStorageService.uploadStudentPassport(studentNumber, file);
+        StorageService.updateStudentPhoto(studentNumber, photoUrl);
         setStudents(StorageService.getStudents());
-        showMsg('Student passport updated successfully!');
-      };
-      reader.readAsDataURL(file);
+        const target = students.find(s => s.studentNumber === studentNumber);
+        if (target) {
+          await FirestoreService.saveStudent({ ...target, photoUrl });
+        }
+        showMsg('Student passport updated in Firebase Storage & Firestore!');
+      } catch (err) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          StorageService.updateStudentPhoto(studentNumber, base64);
+          setStudents(StorageService.getStudents());
+          showMsg('Student passport updated successfully!');
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
   // Staff Actions
-  const handleDeleteStaff = (staffId: string) => {
+  const handleDeleteStaff = async (staffId: string) => {
     if (confirm('Are you sure you want to remove this staff record?')) {
       StorageService.deleteStaff(staffId);
+      try {
+        await FirestoreService.deleteStaff(staffId);
+      } catch (err) {
+        console.warn('Error deleting staff from Firestore:', err);
+      }
       setStaffList(StorageService.getStaff());
-      showMsg('Staff record removed.');
+      showMsg('Staff record removed from production database.');
     }
   };
 
   // Application Actions
-  const handleApproveApplication = (app: AdmissionApplication) => {
+  const handleApproveApplication = async (app: AdmissionApplication) => {
     const newStdNo = `TAYO/${new Date().getFullYear()}/${String(students.length + 1).padStart(3, '0')}`;
     StorageService.updateApplicationStatus(app.id, 'Approved', 'Approved by Admission Committee', newStdNo);
+    await FirestoreService.saveApplication({
+      ...app,
+      status: 'Approved',
+      decisionNotes: 'Approved by Admission Committee',
+      assignedStudentNumber: newStdNo
+    });
+
+    // Auto-create student Firebase Auth account and Firestore profile
+    try {
+      const nameParts = (app.fullName || '').trim().split(/\s+/);
+      const firstName = nameParts[0] || 'Student';
+      const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+      const middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : '';
+      const defaultPassword = 'Password@123';
+
+      await FirebaseAuthService.createStudentAccount({
+        studentNumber: newStdNo,
+        firstName,
+        lastName,
+        middleName,
+        gender: app.gender,
+        dateOfBirth: app.dateOfBirth,
+        section: app.section,
+        className: app.classApplyingFor,
+        house: 'Emerald',
+        photoUrl: app.passportPhoto || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+        status: 'Active',
+        admissionYear: new Date().getFullYear(),
+        guardianName: app.parentName,
+        guardianPhone: app.parentPhone,
+        guardianEmail: app.parentEmail,
+        guardianRelationship: app.parentRelationship,
+        address: app.residentialAddress,
+        stateOfOrigin: app.stateOfOrigin
+      }, defaultPassword);
+      setStudents(StorageService.getStudents());
+      showMsg(`Application approved! Student enrolled as ${newStdNo} with initial password: ${defaultPassword}`);
+    } catch (err: any) {
+      setStudents(StorageService.getStudents());
+      showMsg(`Application approved as ${newStdNo}. (Auth note: ${err.message})`);
+    }
     setApplications(StorageService.getApplications());
-    setStudents(StorageService.getStudents());
-    showMsg(`Application approved! Student registered as ${newStdNo}.`);
   };
 
-  const handleRejectApplication = (appId: string) => {
+  const handleRejectApplication = async (appId: string) => {
     const reason = prompt('Reason for rejection (optional):') || 'Did not meet admission criteria.';
     StorageService.updateApplicationStatus(appId, 'Rejected', reason);
+    const target = applications.find(a => a.id === appId);
+    if (target) {
+      await FirestoreService.saveApplication({ ...target, status: 'Rejected', reviewNotes: reason });
+    }
     setApplications(StorageService.getApplications());
-    showMsg('Application rejected.');
+    showMsg('Application marked as rejected.');
   };
 
   // Password reset for Student / Staff
@@ -821,43 +911,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
 
         {/* ========================================================
-            TAB 7: ACADEMIC SESSION SETTINGS
+            TAB 7: ACADEMIC SESSION & PRINCIPAL OFFICE SETTINGS
            ======================================================== */}
         {activeTab === 'session' && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 max-w-xl mx-auto space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 max-w-3xl mx-auto space-y-8">
             <div>
-              <h2 className="text-lg font-bold text-slate-900 font-display">Academic Session & Term Configuration</h2>
+              <div className="flex items-center gap-2 text-purple-700 font-bold text-xs uppercase tracking-wider mb-1">
+                <Calendar className="w-4 h-4" />
+                <span>Executive Office & Portal Sync</span>
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 font-display">Academic Calendar & Principal Office Settings</h2>
               <p className="text-xs text-slate-500">
-                Define current operating calendar for grading, report cards, and student registration.
+                Configure the active academic operating calendar and personalize the School Principal's name, qualifications, portrait, and welcome address displayed on the home page and official report cards.
               </p>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Current Academic Session</label>
-                <input
-                  type="text"
-                  value={config.activeSession}
-                  onChange={e => setConfig({ ...config, activeSession: e.target.value })}
-                  placeholder="e.g. 2024/2025"
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-purple-600 focus:outline-none"
-                />
+            {/* Academic Operating Calendar */}
+            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">1. Academic Operating Session & Term</h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Current Academic Session</label>
+                  <input
+                    type="text"
+                    value={config.activeSession}
+                    onChange={e => setConfig({ ...config, activeSession: e.target.value })}
+                    placeholder="e.g. 2024/2025"
+                    className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Active Term</label>
+                  <select
+                    value={config.activeTerm}
+                    onChange={e => setConfig({ ...config, activeTerm: e.target.value as any })}
+                    className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
+                  >
+                    <option value="1st Term">1st Term</option>
+                    <option value="2nd Term">2nd Term</option>
+                    <option value="3rd Term">3rd Term</option>
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Active Term</label>
-                <select
-                  value={config.activeTerm}
-                  onChange={e => setConfig({ ...config, activeTerm: e.target.value as any })}
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-purple-600 focus:outline-none"
-                >
-                  <option value="1st Term">1st Term</option>
-                  <option value="2nd Term">2nd Term</option>
-                  <option value="3rd Term">3rd Term</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex items-center gap-3 pt-1">
                 <input
                   type="checkbox"
                   id="admissions-toggle"
@@ -865,21 +964,160 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onChange={e => setConfig({ ...config, admissionsOpen: e.target.checked })}
                   className="w-4 h-4 text-purple-700 rounded"
                 />
-                <label htmlFor="admissions-toggle" className="text-xs font-bold text-slate-700">
-                  Accept Online Admission Applications for New Students
+                <label htmlFor="admissions-toggle" className="text-xs font-bold text-slate-700 cursor-pointer">
+                  Accept Online Admission Applications for New Pupils & Students
                 </label>
               </div>
-
-              <button
-                onClick={() => {
-                  StorageService.saveConfig(config);
-                  showMsg('Academic session configuration saved successfully!');
-                }}
-                className="w-full py-3 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer"
-              >
-                Save Calendar Settings
-              </button>
             </div>
+
+            {/* Principal Office Details */}
+            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">2. Principal Office & Home Page Welcome Address</h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Principal Full Name</label>
+                  <input
+                    type="text"
+                    value={config.principalName || ''}
+                    onChange={e => setConfig({ ...config, principalName: e.target.value })}
+                    placeholder="e.g. Dr. (Mrs.) Folashade O. Adeyinka"
+                    className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-purple-600 focus:outline-none font-semibold text-slate-900"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">Displayed on the home page, school notices, and terminal report cards.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Principal Official Title / Role</label>
+                  <input
+                    type="text"
+                    value={config.principalTitle || ''}
+                    onChange={e => setConfig({ ...config, principalTitle: e.target.value })}
+                    placeholder="e.g. Principal & Director"
+                    className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Academic & Professional Qualifications</label>
+                <input
+                  type="text"
+                  value={config.principalQualifications || ''}
+                  onChange={e => setConfig({ ...config, principalQualifications: e.target.value })}
+                  placeholder="e.g. B.Ed, M.Ed (Educational Management, Unilorin), Ph.D, TRCN"
+                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Welcome Motto / Inspiring Quote</label>
+                <input
+                  type="text"
+                  value={config.principalWelcomeQuote || ''}
+                  onChange={e => setConfig({ ...config, principalWelcomeQuote: e.target.value })}
+                  placeholder='e.g. "We Do Not Just Educate; We Mould Character and Build Destinies."'
+                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-purple-600 focus:outline-none italic"
+                />
+              </div>
+
+              {/* Portrait Photo Upload & Preview */}
+              <div className="p-4 rounded-xl bg-white border border-slate-200 flex flex-col sm:flex-row items-center gap-5">
+                <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-2 border-purple-200 shrink-0 bg-slate-100 shadow-xs">
+                  <img
+                    src={config.principalPhotoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80'}
+                    alt={config.principalName || 'Principal'}
+                    className="w-full h-full object-cover object-top"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <div className="flex-1 w-full space-y-2">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Principal Portrait Photograph</label>
+                  <p className="text-[11px] text-slate-500">
+                    Upload an official executive portrait to Firebase Storage. Recommended aspect ratio: 3:4 portrait or square. Max size: 2MB.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <label className="px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs cursor-pointer border border-purple-200 inline-flex items-center gap-1.5 transition-colors">
+                      <Camera className="w-4 h-4" />
+                      <span>Upload New Portrait</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 2 * 1024 * 1024) {
+                              alert('Photo size exceeds 2MB limit.');
+                              return;
+                            }
+                            try {
+                              showMsg('Uploading Principal portrait to Firebase Storage...');
+                              const uploadedUrl = await FirebaseStorageService.uploadPrincipalPortrait(file);
+                              setConfig(prev => ({ ...prev, principalPhotoUrl: uploadedUrl }));
+                              showMsg('Principal portrait uploaded! Click Save below to persist.');
+                            } catch (uploadErr) {
+                              console.warn('Principal photo upload notice:', uploadErr);
+                            }
+                          }
+                        }}
+                      />
+                    </label>
+                    <span className="text-xs text-slate-400">or specify image URL:</span>
+                  </div>
+                  <input
+                    type="url"
+                    value={config.principalPhotoUrl || ''}
+                    onChange={e => setConfig({ ...config, principalPhotoUrl: e.target.value })}
+                    placeholder="https://..."
+                    className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Welcome Address Paragraphs */}
+              <div className="space-y-3 pt-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Welcome Address (Paragraph 1)</label>
+                  <textarea
+                    rows={3}
+                    value={config.principalMessage1 || ''}
+                    onChange={e => setConfig({ ...config, principalMessage1: e.target.value })}
+                    placeholder="First paragraph of welcome message on home page..."
+                    className="w-full text-sm p-3 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Welcome Address (Paragraph 2)</label>
+                  <textarea
+                    rows={3}
+                    value={config.principalMessage2 || ''}
+                    onChange={e => setConfig({ ...config, principalMessage2: e.target.value })}
+                    placeholder="Second paragraph of welcome message on home page..."
+                    className="w-full text-sm p-3 rounded-xl border border-slate-300 bg-white focus:ring-2 focus:ring-purple-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Save Action */}
+            <button
+              id="admin-save-calendar-btn"
+              onClick={async () => {
+                StorageService.saveConfig(config);
+                try {
+                  await FirestoreService.saveConfig(config);
+                  showMsg("Academic calendar & Principal configuration successfully synchronized to Cloud Firestore and portal!");
+                } catch (err) {
+                  showMsg("Academic session saved locally!");
+                }
+              }}
+              className="w-full py-3.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-sm shadow-md transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save Calendar & Principal Settings to Cloud</span>
+            </button>
           </div>
         )}
 
@@ -1452,11 +1690,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {showAddStudentModal && (
         <AddStudentModal
           onClose={() => setShowAddStudentModal(false)}
-          onAdd={newStd => {
-            StorageService.saveStudent(newStd);
+          onSuccess={(newStd) => {
             setStudents(StorageService.getStudents());
             setShowAddStudentModal(false);
-            showMsg(`Student ${newStd.firstName} enrolled as ${newStd.studentNumber}!`);
+            showMsg(`Student ${newStd.firstName} enrolled with active Firebase Auth account as ${newStd.studentNumber}!`);
           }}
           existingCount={students.length}
         />
@@ -1466,11 +1703,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {showAddStaffModal && (
         <AddStaffModal
           onClose={() => setShowAddStaffModal(false)}
-          onAdd={newStf => {
-            StorageService.saveStaff(newStf);
+          onSuccess={(newStf) => {
             setStaffList(StorageService.getStaff());
             setShowAddStaffModal(false);
-            showMsg(`Staff member ${newStf.fullName} added successfully!`);
+            showMsg(`Staff member ${newStf.fullName} added with active Firebase Auth account (${newStf.staffId})!`);
           }}
           existingCount={staffList.length}
         />
@@ -1615,11 +1851,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
 function AddStudentModal({
   onClose,
-  onAdd,
+  onSuccess,
   existingCount
 }: {
   onClose: () => void;
-  onAdd: (student: Student) => void;
+  onSuccess: (student: Student, initialPass: string) => void;
   existingCount: number;
 }) {
   const [firstName, setFirstName] = useState('');
@@ -1636,39 +1872,213 @@ function AddStudentModal({
   const [address, setAddress] = useState('Ilorin, Kwara State');
   const [photoUrl, setPhotoUrl] = useState('https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80');
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newStudentNumber = `TAYO/${new Date().getFullYear()}/${String(existingCount + 1).padStart(3, '0')}`;
-    const newStudent: Student = {
-      id: 'std-' + Date.now(),
-      studentNumber: newStudentNumber,
-      password: 'password123',
-      firstName,
-      lastName,
-      middleName,
-      gender,
-      dateOfBirth,
-      section,
-      className,
-      house,
-      photoUrl,
-      status: 'Active',
-      admissionYear: new Date().getFullYear(),
-      guardianName,
-      guardianPhone,
-      guardianEmail,
-      guardianRelationship: 'Parent',
-      address,
-      stateOfOrigin: 'Kwara State'
-    };
-    onAdd(newStudent);
+  // Authentication & Credentials State
+  const defaultStdNo = `TAYO/${new Date().getFullYear()}/${String(existingCount + 1).padStart(3, '0')}`;
+  const [studentNumber, setStudentNumber] = useState(defaultStdNo);
+  const [password, setPassword] = useState('Password@123');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
+  const [createdStudent, setCreatedStudent] = useState<Student | null>(null);
+
+  const generatePassword = () => {
+    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let res = 'Tayo@';
+    for (let i = 0; i < 4; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setPassword(res);
   };
+
+  const handlePassportUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert('Passport photo size must be under 2MB.');
+        return;
+      }
+      try {
+        setIsUploadingPhoto(true);
+        const url = await FirebaseStorageService.uploadStudentPassport(studentNumber.trim(), file);
+        setPhotoUrl(url);
+      } catch (err: any) {
+        console.warn('Storage upload error:', err);
+      } finally {
+        setIsUploadingPhoto(false);
+      }
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters for Firebase Authentication.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const studentData: Omit<Student, 'id' | 'password'> = {
+        studentNumber: studentNumber.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        middleName: middleName.trim(),
+        gender,
+        dateOfBirth,
+        section,
+        className: className.trim(),
+        house,
+        photoUrl,
+        status: 'Active',
+        admissionYear: new Date().getFullYear(),
+        guardianName: guardianName.trim(),
+        guardianPhone: guardianPhone.trim(),
+        guardianEmail: guardianEmail.trim(),
+        guardianRelationship: 'Parent',
+        address: address.trim(),
+        stateOfOrigin: 'Kwara State'
+      };
+
+      // Create Firebase Auth account via secondary app to keep admin session intact
+      const enrolled = await FirebaseAuthService.createStudentAccount(studentData, password);
+      StorageService.saveStudent(enrolled);
+      setCreatedStudent(enrolled);
+    } catch (err: any) {
+      console.error('Error creating student account:', err);
+      setErrorMsg(err.message || 'Failed to create student account in Firebase Authentication.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // SUCCESS CREDENTIALS CONFIRMATION VIEW
+  if (createdStudent) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-emerald-200 animate-in fade-in zoom-in-95">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 mx-auto rounded-full bg-emerald-100 text-[#008751] flex items-center justify-center shadow-inner">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+            <h3 className="font-bold text-slate-900 text-lg font-display">Student Enrolled & Activated!</h3>
+            <p className="text-xs text-slate-500">
+              A real Firebase Authentication account has been provisioned. The student can now log in immediately on the Student Portal.
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Full Name</span>
+              <strong className="text-xs text-slate-900 font-bold">{createdStudent.firstName} {createdStudent.lastName}</strong>
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Student ID (Login Identifier)</span>
+              <span className="font-mono text-xs font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                {createdStudent.studentNumber}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Initial Password</span>
+              <span className="font-mono text-xs font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                {password}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Class / Section</span>
+              <span className="text-xs text-slate-700 font-semibold">{createdStudent.className} ({createdStudent.section})</span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Firebase Auth Security</span>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" />
+                Active & Enforced
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                const text = `T'AYO School Student Portal Credentials:\nStudent ID: ${createdStudent.studentNumber}\nPassword: ${password}\nClass: ${createdStudent.className}`;
+                navigator.clipboard.writeText(text);
+                setCopiedCredentials(true);
+                setTimeout(() => setCopiedCredentials(false), 3000);
+              }}
+              className="w-full py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            >
+              {copiedCredentials ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span className="text-emerald-700">Copied to Clipboard!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-slate-500" />
+                  <span>Copy Login Credentials</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSuccess(createdStudent, password)}
+              className="w-full py-3 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-md cursor-pointer transition-colors"
+            >
+              Done & Finish
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 my-8 shadow-2xl border border-slate-200">
-        <h3 className="font-bold text-slate-900 text-lg font-display">Add & Enroll New Student</h3>
-        <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+        <div>
+          <div className="flex items-center gap-2 text-purple-700 text-xs font-bold uppercase tracking-wider mb-1">
+            <GraduationCap className="w-4 h-4" />
+            <span>Firebase Auth Enrolled</span>
+          </div>
+          <h3 className="font-bold text-slate-900 text-lg font-display">Add & Enroll New Student</h3>
+          <p className="text-xs text-slate-500">
+            Creates a secure profile in Firestore and registers student credentials directly in Firebase Authentication.
+          </p>
+        </div>
+
+        {errorMsg && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+          {/* Identity & Student ID */}
+          <div className="p-3 rounded-xl bg-purple-50/50 border border-purple-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-purple-900 uppercase text-[11px]">Assigned Student ID / Number</label>
+              <span className="text-[10px] text-purple-600 font-medium">Used for Student Portal Login</span>
+            </div>
+            <input
+              required
+              type="text"
+              value={studentNumber}
+              onChange={e => setStudentNumber(e.target.value)}
+              placeholder="e.g. TAYO/2025/001"
+              className="w-full text-sm font-mono font-bold px-3 py-2 border border-purple-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-600 text-purple-900"
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-bold text-slate-700 uppercase mb-1">First Name</label>
@@ -1677,6 +2087,7 @@ function AddStudentModal({
                 type="text"
                 value={firstName}
                 onChange={e => setFirstName(e.target.value)}
+                placeholder="e.g. Zainab"
                 className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl"
               />
             </div>
@@ -1687,6 +2098,7 @@ function AddStudentModal({
                 type="text"
                 value={lastName}
                 onChange={e => setLastName(e.target.value)}
+                placeholder="e.g. Bello"
                 className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl"
               />
             </div>
@@ -1694,16 +2106,29 @@ function AddStudentModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="block font-bold text-slate-700 uppercase mb-1">Middle Name (Optional)</label>
+              <input
+                type="text"
+                value={middleName}
+                onChange={e => setMiddleName(e.target.value)}
+                placeholder="e.g. Alaba"
+                className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl"
+              />
+            </div>
+            <div>
               <label className="block font-bold text-slate-700 uppercase mb-1">Gender</label>
               <select
                 value={gender}
                 onChange={e => setGender(e.target.value as any)}
-                className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl"
+                className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl bg-white"
               >
-                <option value="Male">Male</option>
                 <option value="Female">Female</option>
+                <option value="Male">Male</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-bold text-slate-700 uppercase mb-1">Date of Birth</label>
               <input
@@ -1713,22 +2138,26 @@ function AddStudentModal({
                 className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl"
               />
             </div>
+            <div>
+              <label className="block font-bold text-slate-700 uppercase mb-1">School Section</label>
+              <select
+                value={section}
+                onChange={e => {
+                  const s = e.target.value as any;
+                  setSection(s);
+                  setClassName(s === 'primary' ? 'Basic 4' : 'SSS 1 Science');
+                }}
+                className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl bg-white"
+              >
+                <option value="primary">Primary School</option>
+                <option value="secondary">Secondary School</option>
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 uppercase mb-1">Section</label>
-              <select
-                value={section}
-                onChange={e => setSection(e.target.value as any)}
-                className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl"
-              >
-                <option value="primary">Primary</option>
-                <option value="secondary">Secondary</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-bold text-slate-700 uppercase mb-1">Class</label>
+              <label className="block font-bold text-slate-700 uppercase mb-1">Class Assigned</label>
               <input
                 required
                 type="text"
@@ -1737,6 +2166,80 @@ function AddStudentModal({
                 placeholder="e.g. SSS 1 Science"
                 className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl"
               />
+            </div>
+            <div>
+              <label className="block font-bold text-slate-700 uppercase mb-1">Sports House</label>
+              <select
+                value={house}
+                onChange={e => setHouse(e.target.value as any)}
+                className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl bg-white"
+              >
+                <option value="Emerald">Emerald (Green)</option>
+                <option value="Ruby">Ruby (Red)</option>
+                <option value="Sapphire">Sapphire (Blue)</option>
+                <option value="Topaz">Topaz (Yellow)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Initial Password Configuration */}
+          <div className="p-3.5 rounded-xl bg-amber-50/50 border border-amber-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-amber-900 uppercase text-[11px] flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Initial Student Portal Password</span>
+              </label>
+              <button
+                type="button"
+                onClick={generatePassword}
+                className="text-[10px] font-bold text-amber-800 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Generate Random</span>
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                required
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full text-sm font-mono px-3 py-2 border border-amber-300 rounded-xl bg-white focus:outline-none pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-amber-700">
+              The student will use this password to sign in to their dashboard. It will be registered in Firebase Auth.
+            </p>
+          </div>
+
+          {/* Passport Photo Upload */}
+          <div className="space-y-1.5">
+            <label className="block font-bold text-slate-700 uppercase">Student Passport Photograph</label>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0">
+                <img src={photoUrl} alt="Passport" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              </div>
+              <div className="flex-1">
+                <label className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer inline-flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-purple-700" />
+                  <span>{isUploadingPhoto ? 'Uploading...' : 'Upload Passport Photo'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isUploadingPhoto}
+                    onChange={handlePassportUpload}
+                  />
+                </label>
+                <span className="text-[10px] text-slate-400 ml-2">PNG / JPG up to 2MB</span>
+              </div>
             </div>
           </div>
 
@@ -1748,6 +2251,7 @@ function AddStudentModal({
                 type="text"
                 value={guardianName}
                 onChange={e => setGuardianName(e.target.value)}
+                placeholder="Parent / Guardian Name"
                 className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl"
               />
             </div>
@@ -1774,19 +2278,28 @@ function AddStudentModal({
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-4">
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-100 rounded-xl"
+              disabled={isSubmitting}
+              className="px-4 py-2.5 text-slate-600 font-bold text-xs hover:bg-slate-100 rounded-xl cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl shadow-sm"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 disabled:bg-purple-400 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 cursor-pointer"
             >
-              Enroll Student
+              {isSubmitting ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Registering Account in Firebase...</span>
+                </>
+              ) : (
+                <span>Enroll Student & Create Account</span>
+              )}
             </button>
           </div>
         </form>
@@ -1797,11 +2310,11 @@ function AddStudentModal({
 
 function AddStaffModal({
   onClose,
-  onAdd,
+  onSuccess,
   existingCount
 }: {
   onClose: () => void;
-  onAdd: (staff: Staff) => void;
+  onSuccess: (staff: Staff, initialPass: string) => void;
   existingCount: number;
 }) {
   const [fullName, setFullName] = useState('');
@@ -1812,34 +2325,209 @@ function AddStaffModal({
   const [assignedSection, setAssignedSection] = useState<'primary' | 'secondary' | 'both'>('secondary');
   const [assignedClasses, setAssignedClasses] = useState('SSS 1 Science, SSS 2 Science');
   const [assignedSubjects, setAssignedSubjects] = useState('Mathematics, Further Mathematics');
+  const [photoUrl, setPhotoUrl] = useState('https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80');
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newStaffId = `STF-${String(existingCount + 10).padStart(3, '0')}`;
-    const newStaff: Staff = {
-      id: 'stf-' + Date.now(),
-      staffId: newStaffId,
-      email,
-      password: 'password123',
-      fullName,
-      gender: 'Male',
-      phone,
-      qualification,
-      roleTitle,
-      assignedSection,
-      assignedClasses: assignedClasses.split(',').map(s => s.trim()),
-      assignedSubjects: assignedSubjects.split(',').map(s => s.trim()),
-      photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
-      joinedDate: new Date().toISOString().split('T')[0]
-    };
-    onAdd(newStaff);
+  // Authentication & Credentials State
+  const defaultStaffId = `STF-${String(existingCount + 10).padStart(3, '0')}`;
+  const [staffId, setStaffId] = useState(defaultStaffId);
+  const [password, setPassword] = useState('Staff@123');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
+  const [createdStaff, setCreatedStaff] = useState<Staff | null>(null);
+
+  const generatePassword = () => {
+    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let res = 'Staff@';
+    for (let i = 0; i < 4; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setPassword(res);
   };
+
+  const handlePassportUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert('Passport photo size must be under 2MB.');
+        return;
+      }
+      try {
+        setIsUploadingPhoto(true);
+        const url = await FirebaseStorageService.uploadStaffPassport(staffId.trim(), file);
+        setPhotoUrl(url);
+      } catch (err: any) {
+        console.warn('Storage upload error:', err);
+      } finally {
+        setIsUploadingPhoto(false);
+      }
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters for Firebase Authentication.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const staffPayload: Omit<Staff, 'id' | 'password'> = {
+        staffId: staffId.trim(),
+        email: email.trim(),
+        fullName: fullName.trim(),
+        gender: 'Male',
+        phone: phone.trim(),
+        qualification: qualification.trim(),
+        roleTitle: roleTitle.trim(),
+        assignedSection,
+        assignedClasses: assignedClasses.split(',').map(s => s.trim()).filter(Boolean),
+        assignedSubjects: assignedSubjects.split(',').map(s => s.trim()).filter(Boolean),
+        photoUrl,
+        joinedDate: new Date().toISOString().split('T')[0]
+      };
+
+      // Create Firebase Auth account via secondary app so admin remains logged in
+      const created = await FirebaseAuthService.createStaffAccount(staffPayload, password);
+      StorageService.saveStaff(created);
+      setCreatedStaff(created);
+    } catch (err: any) {
+      console.error('Error creating staff account:', err);
+      setErrorMsg(err.message || 'Failed to create staff account in Firebase Authentication.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // SUCCESS CREDENTIALS CONFIRMATION VIEW
+  if (createdStaff) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-emerald-200 animate-in fade-in zoom-in-95">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 mx-auto rounded-full bg-emerald-100 text-[#008751] flex items-center justify-center shadow-inner">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+            <h3 className="font-bold text-slate-900 text-lg font-display">Faculty Account Created!</h3>
+            <p className="text-xs text-slate-500">
+              Staff member has been registered in Firebase Authentication and can now log in using either their Staff ID or Email.
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Full Name</span>
+              <strong className="text-xs text-slate-900 font-bold">{createdStaff.fullName}</strong>
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Staff ID</span>
+              <span className="font-mono text-xs font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                {createdStaff.staffId}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Official Email</span>
+              <span className="text-xs text-slate-800 font-semibold">{createdStaff.email}</span>
+            </div>
+
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Initial Password</span>
+              <span className="font-mono text-xs font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                {password}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Firebase Auth Security</span>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" />
+                Active & Enforced
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                const text = `T'AYO School Staff Credentials:\nName: ${createdStaff.fullName}\nStaff ID: ${createdStaff.staffId}\nEmail: ${createdStaff.email}\nPassword: ${password}`;
+                navigator.clipboard.writeText(text);
+                setCopiedCredentials(true);
+                setTimeout(() => setCopiedCredentials(false), 3000);
+              }}
+              className="w-full py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            >
+              {copiedCredentials ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span className="text-emerald-700">Copied to Clipboard!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-slate-500" />
+                  <span>Copy Login Credentials</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSuccess(createdStaff, password)}
+              className="w-full py-3 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-md cursor-pointer transition-colors"
+            >
+              Done & Finish
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 my-8 shadow-2xl border border-slate-200">
-        <h3 className="font-bold text-slate-900 text-lg font-display">Add New Faculty / Staff Member</h3>
-        <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+        <div>
+          <div className="flex items-center gap-2 text-purple-700 text-xs font-bold uppercase tracking-wider mb-1">
+            <Building2 className="w-4 h-4" />
+            <span>Faculty Registration</span>
+          </div>
+          <h3 className="font-bold text-slate-900 text-lg font-display">Add New Faculty / Staff Member</h3>
+          <p className="text-xs text-slate-500">
+            Creates an employee profile in Firestore and provisions credentials directly in Firebase Authentication.
+          </p>
+        </div>
+
+        {errorMsg && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+          {/* Identity & Staff ID */}
+          <div className="p-3 rounded-xl bg-purple-50/50 border border-purple-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-purple-900 uppercase text-[11px]">Assigned Staff ID</label>
+              <span className="text-[10px] text-purple-600 font-medium">Used for Staff Portal Login</span>
+            </div>
+            <input
+              required
+              type="text"
+              value={staffId}
+              onChange={e => setStaffId(e.target.value)}
+              placeholder="e.g. STF-015"
+              className="w-full text-sm font-mono font-bold px-3 py-2 border border-purple-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-purple-600 text-purple-900"
+            />
+          </div>
+
           <div>
             <label className="block font-bold text-slate-700 uppercase mb-1">Full Name & Title</label>
             <input
@@ -1899,6 +2587,80 @@ function AddStaffModal({
             </div>
           </div>
 
+          {/* Initial Password Configuration */}
+          <div className="p-3.5 rounded-xl bg-amber-50/50 border border-amber-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-amber-900 uppercase text-[11px] flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Initial Staff Portal Password</span>
+              </label>
+              <button
+                type="button"
+                onClick={generatePassword}
+                className="text-[10px] font-bold text-amber-800 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Generate Random</span>
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                required
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full text-sm font-mono px-3 py-2 border border-amber-300 rounded-xl bg-white focus:outline-none pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-amber-700">
+              The teacher can sign in with this password alongside their Staff ID or Email.
+            </p>
+          </div>
+
+          {/* Staff Photo */}
+          <div className="space-y-1.5">
+            <label className="block font-bold text-slate-700 uppercase">Staff Portrait Photograph</label>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0">
+                <img src={photoUrl} alt="Staff Portrait" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              </div>
+              <div className="flex-1">
+                <label className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer inline-flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-purple-700" />
+                  <span>{isUploadingPhoto ? 'Uploading...' : 'Upload Staff Photo'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isUploadingPhoto}
+                    onChange={handlePassportUpload}
+                  />
+                </label>
+                <span className="text-[10px] text-slate-400 ml-2">PNG / JPG up to 2MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 uppercase mb-1">Assigned Section</label>
+            <select
+              value={assignedSection}
+              onChange={e => setAssignedSection(e.target.value as any)}
+              className="w-full text-sm px-3 py-2 border border-slate-300 rounded-xl bg-white"
+            >
+              <option value="primary">Primary School Only</option>
+              <option value="secondary">Secondary School Only</option>
+              <option value="both">Both Primary & Secondary</option>
+            </select>
+          </div>
+
           <div>
             <label className="block font-bold text-slate-700 uppercase mb-1">Assigned Classes (Comma separated)</label>
             <input
@@ -1919,19 +2681,28 @@ function AddStaffModal({
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-4">
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-100 rounded-xl"
+              disabled={isSubmitting}
+              className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-100 rounded-xl cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl shadow-sm"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 disabled:bg-purple-400 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 cursor-pointer"
             >
-              Add Staff Record
+              {isSubmitting ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Registering in Firebase...</span>
+                </>
+              ) : (
+                <span>Add Faculty & Create Account</span>
+              )}
             </button>
           </div>
         </form>

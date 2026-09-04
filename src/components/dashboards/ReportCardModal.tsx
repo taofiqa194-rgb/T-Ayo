@@ -1,6 +1,7 @@
 import React from 'react';
 import { Printer, X, Award, CheckCircle, Shield } from 'lucide-react';
 import { StudentResultRecord, Student } from '../../types';
+import { StorageService } from '../../services/storage';
 
 interface ReportCardModalProps {
   result: StudentResultRecord;
@@ -13,6 +14,10 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
   student,
   onClose
 }) => {
+  const config = StorageService.getConfig();
+  const principalName = config.principalName || 'Dr. (Mrs.) Folashade O. Adeyinka';
+  const principalTitle = config.principalTitle || 'Academic Principal';
+
   const handlePrint = () => {
     window.print();
   };
@@ -263,9 +268,9 @@ export const ReportCardModal: React.FC<ReportCardModalProps> = ({
 
               <div>
                 <div className="border-b border-slate-400 pb-1 font-signature text-sm font-semibold text-blue-900">
-                  Dr. (Mrs.) Folashade Adeyinka
+                  {principalName}
                 </div>
-                <p className="text-[10px] text-slate-500 mt-1 uppercase font-semibold">Academic Principal</p>
+                <p className="text-[10px] text-slate-500 mt-1 uppercase font-semibold">{principalTitle}</p>
               </div>
             </div>
           </div>

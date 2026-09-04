@@ -2,6 +2,7 @@ import {
   Student,
   Staff,
   Administrator,
+  SchoolConfig,
   StudentResultRecord,
   AdmissionApplication,
   SchoolClass,
@@ -36,16 +37,7 @@ const KEYS = {
   FEE_PAYMENTS: 'tayo_fee_payments_v1'
 };
 
-export interface SchoolConfig {
-  activeSession: string;
-  activeTerm: '1st Term' | '2nd Term' | '3rd Term';
-  schoolName: string;
-  location: string;
-  phone1: string;
-  phone2: string;
-  email: string;
-  admissionsOpen: boolean;
-}
+export type { SchoolConfig };
 
 const DEFAULT_CONFIG: SchoolConfig = {
   activeSession: '2024/2025',
@@ -55,7 +47,14 @@ const DEFAULT_CONFIG: SchoolConfig = {
   phone1: '09076930244',
   phone2: '09076930244',
   email: 'admissions@tayoschool.edu.ng',
-  admissionsOpen: true
+  admissionsOpen: true,
+  principalName: 'Dr. (Mrs.) Folashade O. Adeyinka',
+  principalTitle: 'Principal & Director',
+  principalQualifications: 'B.Ed, M.Ed (Educational Management, Unilorin), Ph.D, TRCN',
+  principalPhotoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80',
+  principalWelcomeQuote: '"We Do Not Just Educate; We Mould Character and Build Destinies."',
+  principalMessage1: "At T'AYO School in Ilorin, Kwara State, we consider education a sacred trust. Our holistic educational curriculum integrates national standards with international best practices, giving each pupil and student a solid foundation in numeracy, literacy, critical inquiry, digital fluency, and cultural appreciation.",
+  principalMessage2: 'Whether inside our modern science laboratories, on the athletic field, or in leadership roles, our children are nurtured to excel with humility, empathy, and resilience. We welcome you to experience the T\'AYO family.'
 };
 
 function load<T>(key: string, fallback: T): T {
@@ -140,7 +139,8 @@ export const StorageService = {
   },
 
   getConfig(): SchoolConfig {
-    const cfg = load<SchoolConfig>(KEYS.CONFIG, DEFAULT_CONFIG);
+    const loaded = load<SchoolConfig>(KEYS.CONFIG, DEFAULT_CONFIG);
+    const cfg = { ...DEFAULT_CONFIG, ...loaded };
     if (cfg.phone1 !== '09076930244' || cfg.phone2 !== '09076930244') {
       cfg.phone1 = '09076930244';
       cfg.phone2 = '09076930244';

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Users, Lock, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { Staff, PageId } from '../../types';
-import { FirebaseAuthService } from '../../firebase/authService';
+import { FirebaseAuthService, formatAuthErrorMessage } from '../../firebase/authService';
 
 interface StaffLoginPageProps {
   onLoginSuccess: (staff: Staff) => void;
@@ -26,7 +26,7 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({
       const staff = await FirebaseAuthService.loginStaff(identifier.trim(), password);
       onLoginSuccess(staff);
     } catch (err: any) {
-      setError(err.message || 'Invalid Staff ID / Email or Password. Please try again.');
+      setError(formatAuthErrorMessage(err, 'Invalid Staff ID / Email or Password. Please try again.'));
     } finally {
       setIsLoading(false);
     }

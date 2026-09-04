@@ -101,6 +101,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
   }, []);
 
+  // Real-time fee payments synchronization for administrator console
+  useEffect(() => {
+    const unsub = FirestoreService.subscribeToFeePayments((updatedFees) => {
+      if (updatedFees && updatedFees.length > 0) {
+        setFeePayments(updatedFees);
+      }
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
+
   // Admin Profile State
   const [adminFullName, setAdminFullName] = useState(admin.fullName);
   const [adminPhone, setAdminPhone] = useState(admin.phone || '09076930244');

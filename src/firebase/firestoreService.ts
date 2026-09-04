@@ -440,15 +440,46 @@ export const FirestoreService = {
   },
 
   // -------------------------------------------------------------
+  // GALLERY
+  // -------------------------------------------------------------
+  async getGallery(): Promise<GalleryItem[]> {
+    if (!isFirebaseInitialized || !db) return INITIAL_GALLERY;
+    try {
+      const snap = await getDocs(collection(db, COLLECTIONS.GALLERY));
+      if (snap.empty) return INITIAL_GALLERY;
+      return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as GalleryItem));
+    } catch (err) {
+      console.warn('Error reading gallery from Firestore:', err);
+      return INITIAL_GALLERY;
+    }
+  },
+
+  async saveGalleryItem(item: GalleryItem): Promise<void> {
+    if (!isFirebaseInitialized || !db) return;
+    try {
+      const ref = doc(db, COLLECTIONS.GALLERY, item.id);
+      await setDoc(ref, item, { merge: true });
+    } catch (err) {
+      console.warn(`Error saving gallery item ${item.id} to Firestore:`, err);
+    }
+  },
+
+  // -------------------------------------------------------------
   // REAL-TIME LISTENERS
   // -------------------------------------------------------------
   subscribeToAnnouncements(onUpdate: (items: Announcement[]) => void): Unsubscribe | null {
     if (!isFirebaseInitialized || !db) return null;
     try {
-      return onSnapshot(collection(db, COLLECTIONS.ANNOUNCEMENTS), snap => {
-        const items = snap.docs.map(d => ({ ...d.data(), id: d.id } as Announcement));
-        onUpdate(items);
-      });
+      return onSnapshot(
+        collection(db, COLLECTIONS.ANNOUNCEMENTS),
+        snap => {
+          const items = snap.docs.map(d => ({ ...d.data(), id: d.id } as Announcement));
+          onUpdate(items);
+        },
+        error => {
+          console.warn('Announcements snapshot listener notice:', error.code || error.message);
+        }
+      );
     } catch (err) {
       console.warn('Error subscribing to announcements:', err);
       return null;
@@ -458,10 +489,17 @@ export const FirestoreService = {
   subscribeToFeePayments(onUpdate: (items: FeePayment[]) => void): Unsubscribe | null {
     if (!isFirebaseInitialized || !db) return null;
     try {
-      return onSnapshot(collection(db, COLLECTIONS.FEE_PAYMENTS), snap => {
-        const items = snap.docs.map(d => ({ ...d.data(), id: d.id } as FeePayment));
-        onUpdate(items);
-      });
+      return onSnapshot(
+        collection(db, COLLECTIONS.FEE_PAYMENTS),
+        snap => {
+          const items = snap.docs.map(d => ({ ...d.data(), id: d.id } as FeePayment));
+          onUpdate(items);
+        },
+        error => {
+          // Expected when unauthenticated or role does not have financial permissions
+          console.warn('Fee payments snapshot listener notice:', error.code || error.message);
+        }
+      );
     } catch (err) {
       console.warn('Error subscribing to fee payments:', err);
       return null;
@@ -471,11 +509,17 @@ export const FirestoreService = {
   subscribeToConfig(onUpdate: (cfg: SchoolConfig) => void): Unsubscribe | null {
     if (!isFirebaseInitialized || !db) return null;
     try {
-      return onSnapshot(doc(db, COLLECTIONS.SCHOOL_CONFIG, 'current'), snap => {
-        if (snap.exists()) {
-          onUpdate(snap.data() as SchoolConfig);
+      return onSnapshot(
+        doc(db, COLLECTIONS.SCHOOL_CONFIG, 'current'),
+        snap => {
+          if (snap.exists()) {
+            onUpdate(snap.data() as SchoolConfig);
+          }
+        },
+        error => {
+          console.warn('School config snapshot listener notice:', error.code || error.message);
         }
-      });
+      );
     } catch (err) {
       console.warn('Error subscribing to school config:', err);
       return null;

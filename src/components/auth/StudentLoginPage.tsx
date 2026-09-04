@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { GraduationCap, Lock, KeyRound, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { Student, PageId } from '../../types';
-import { FirebaseAuthService } from '../../firebase/authService';
+import { FirebaseAuthService, formatAuthErrorMessage } from '../../firebase/authService';
 
 interface StudentLoginPageProps {
   onLoginSuccess: (student: Student) => void;
@@ -31,7 +31,7 @@ export const StudentLoginPage: React.FC<StudentLoginPageProps> = ({
       }
       onLoginSuccess(student);
     } catch (err: any) {
-      setError(err.message || 'Invalid Student Number or Password. Please verify and try again.');
+      setError(formatAuthErrorMessage(err, 'Invalid Student Number or Password. Please verify and try again.'));
     } finally {
       setIsLoading(false);
     }

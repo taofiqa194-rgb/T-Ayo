@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { Administrator, PageId } from '../../types';
-import { FirebaseAuthService } from '../../firebase/authService';
+import { FirebaseAuthService, formatAuthErrorMessage } from '../../firebase/authService';
 
 interface AdminLoginPageProps {
   onLoginSuccess: (admin: Administrator) => void;
@@ -26,7 +26,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
       const admin = await FirebaseAuthService.loginAdmin(identifier.trim(), password);
       onLoginSuccess(admin);
     } catch (err: any) {
-      setError(err.message || 'Invalid Administrator ID / Email or Password. Please try again.');
+      setError(formatAuthErrorMessage(err, 'Invalid Administrator ID / Email or Password. Please try again.'));
     } finally {
       setIsLoading(false);
     }

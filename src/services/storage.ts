@@ -98,38 +98,41 @@ export const StorageService = {
     // 2. Asynchronously sync with Cloud Firestore
     if (isFirebaseInitialized) {
       try {
-        await FirestoreService.seedInitialDataIfEmpty();
-
-        // Fetch cloud data and hydrate local cache
-        const [cloudStudents, cloudStaff, cloudClasses, cloudAnnouncements, cloudFees, cloudResults, cloudApps] = await Promise.all([
-          FirestoreService.getStudents(),
-          FirestoreService.getStaff(),
+        // Always fetch public school collections
+        const [cloudClasses, cloudAnnouncements, cloudGallery, cloudConfig] = await Promise.all([
           FirestoreService.getClasses(),
           FirestoreService.getAnnouncements(),
-          FirestoreService.getFeePayments(),
-          FirestoreService.getResults(),
-          FirestoreService.getApplications()
+          FirestoreService.getGallery(),
+          FirestoreService.getConfig()
         ]);
 
-        if (cloudStudents.length > 0) save(KEYS.STUDENTS, cloudStudents);
-        if (cloudStaff.length > 0) save(KEYS.STAFF, cloudStaff);
         if (cloudClasses.length > 0) save(KEYS.CLASSES, cloudClasses);
         if (cloudAnnouncements.length > 0) save(KEYS.ANNOUNCEMENTS, cloudAnnouncements);
-        if (cloudFees.length > 0) save(KEYS.FEE_PAYMENTS, cloudFees);
-        if (cloudResults.length > 0) save(KEYS.RESULTS, cloudResults);
-        if (cloudApps.length > 0) save(KEYS.APPLICATIONS, cloudApps);
+        if (cloudGallery.length > 0) save(KEYS.GALLERY, cloudGallery);
+        if (cloudConfig) save(KEYS.CONFIG, cloudConfig);
 
-        // Real-time listener for announcements
+        // Hydrate administrative and restricted records if an active session is detected
+        const hasAdminSession = localStorage.getItem('tayo_session_admin') === 'true';
+        if (hasAdminSession) {
+          const [cloudStudents, cloudStaff, cloudFees, cloudResults, cloudApps] = await Promise.all([
+            FirestoreService.getStudents(),
+            FirestoreService.getStaff(),
+            FirestoreService.getFeePayments(),
+            FirestoreService.getResults(),
+            FirestoreService.getApplications()
+          ]);
+
+          if (cloudStudents.length > 0) save(KEYS.STUDENTS, cloudStudents);
+          if (cloudStaff.length > 0) save(KEYS.STAFF, cloudStaff);
+          if (cloudFees.length > 0) save(KEYS.FEE_PAYMENTS, cloudFees);
+          if (cloudResults.length > 0) save(KEYS.RESULTS, cloudResults);
+          if (cloudApps.length > 0) save(KEYS.APPLICATIONS, cloudApps);
+        }
+
+        // Real-time listener for announcements (public)
         FirestoreService.subscribeToAnnouncements((ann) => {
           if (ann && ann.length > 0) {
             save(KEYS.ANNOUNCEMENTS, ann);
-          }
-        });
-
-        // Real-time listener for fee payments
-        FirestoreService.subscribeToFeePayments((fees) => {
-          if (fees && fees.length > 0) {
-            save(KEYS.FEE_PAYMENTS, fees);
           }
         });
       } catch (e) {

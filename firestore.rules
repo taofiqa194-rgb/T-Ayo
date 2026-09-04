@@ -1,0 +1,134 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        request.auth.token.email == 'admin@tayoschool.edu.ng' ||
+        request.auth.token.email == 'adebayofaoziyyah1@gmail.com' ||
+        exists(/databases/$(database)/documents/administrators/$(request.auth.uid))
+      );
+    }
+
+    function isStaff() {
+      return isAuthenticated() && (
+        isAdmin() ||
+        request.auth.token.role == 'staff' ||
+        exists(/databases/$(database)/documents/staff/$(request.auth.uid))
+      );
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // 1. Students Collection
+    match /students/{studentId} {
+      // Students can read their own profile; Staff and Admin can read all students
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isStaff() ||
+        isOwner(studentId) ||
+        (resource.data.authUid != null && resource.data.authUid == request.auth.uid) ||
+        (request.auth.token.studentNumber != null && resource.data.studentNumber == request.auth.token.studentNumber)
+      );
+      // Admin can create or delete; student can update their personal details; admin can update all
+      allow create, delete: if isAdmin();
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        isOwner(studentId) ||
+        (resource.data.authUid != null && resource.data.authUid == request.auth.uid)
+      );
+    }
+
+    // 2. Staff Collection
+    match /staff/{staffId} {
+      // Authenticated users can view staff profiles
+      allow read: if isAuthenticated();
+      allow create, delete: if isAdmin();
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        isOwner(staffId) ||
+        (resource.data.authUid != null && resource.data.authUid == request.auth.uid)
+      );
+    }
+
+    // 3. Administrators Collection
+    match /administrators/{adminId} {
+      allow read: if isAuthenticated() && (isAdmin() || isOwner(adminId));
+      allow write: if isAdmin();
+    }
+
+    // 4. Admission Applications
+    match /admission_applications/{applicationId} {
+      // Public prospective learners and parents can submit applications
+      allow create: if true;
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (resource.data.parentEmail != null && resource.data.parentEmail == request.auth.token.email)
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // 5. Classes
+    match /classes/{classId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 6. Results
+    match /results/{resultId} {
+      // Admin and Staff can read/write results; Students can only read their own result
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isStaff() ||
+        resource.data.studentId == request.auth.uid ||
+        (resource.data.authUid != null && resource.data.authUid == request.auth.uid) ||
+        (request.auth.token.studentNumber != null && resource.data.studentNumber == request.auth.token.studentNumber)
+      );
+      allow write: if isAdmin() || isStaff();
+    }
+
+    // 7. Announcements
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 8. Academic Sessions
+    match /academic_sessions/{sessionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 9. Fee Payments
+    match /fee_payments/{paymentId} {
+      // Students can view their payment receipts; Admin can view all
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.studentId == request.auth.uid ||
+        (request.auth.token.studentNumber != null && resource.data.studentNumber == request.auth.token.studentNumber)
+      );
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // 10. School Config & Gallery
+    match /school_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /gallery/{galleryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

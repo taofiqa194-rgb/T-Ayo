@@ -20,6 +20,8 @@ import {
   INITIAL_GALLERY,
   INITIAL_FEE_PAYMENTS
 } from '../data/initialData';
+import { FirestoreService } from '../firebase/firestoreService';
+import { isFirebaseInitialized } from '../firebase/config';
 
 const KEYS = {
   STUDENTS: 'tayo_students_v1',
@@ -81,8 +83,8 @@ function save<T>(key: string, data: T): void {
 }
 
 export const StorageService = {
-  init(): void {
-    // Triggers initial load and population of localStorage
+  async init(): Promise<void> {
+    // 1. Initial local load
     this.getConfig();
     this.getStudents();
     this.getStaff();
@@ -93,6 +95,48 @@ export const StorageService = {
     this.getAnnouncements();
     this.getGallery();
     this.getFeePayments();
+
+    // 2. Asynchronously sync with Cloud Firestore
+    if (isFirebaseInitialized) {
+      try {
+        await FirestoreService.seedInitialDataIfEmpty();
+
+        // Fetch cloud data and hydrate local cache
+        const [cloudStudents, cloudStaff, cloudClasses, cloudAnnouncements, cloudFees, cloudResults, cloudApps] = await Promise.all([
+          FirestoreService.getStudents(),
+          FirestoreService.getStaff(),
+          FirestoreService.getClasses(),
+          FirestoreService.getAnnouncements(),
+          FirestoreService.getFeePayments(),
+          FirestoreService.getResults(),
+          FirestoreService.getApplications()
+        ]);
+
+        if (cloudStudents.length > 0) save(KEYS.STUDENTS, cloudStudents);
+        if (cloudStaff.length > 0) save(KEYS.STAFF, cloudStaff);
+        if (cloudClasses.length > 0) save(KEYS.CLASSES, cloudClasses);
+        if (cloudAnnouncements.length > 0) save(KEYS.ANNOUNCEMENTS, cloudAnnouncements);
+        if (cloudFees.length > 0) save(KEYS.FEE_PAYMENTS, cloudFees);
+        if (cloudResults.length > 0) save(KEYS.RESULTS, cloudResults);
+        if (cloudApps.length > 0) save(KEYS.APPLICATIONS, cloudApps);
+
+        // Real-time listener for announcements
+        FirestoreService.subscribeToAnnouncements((ann) => {
+          if (ann && ann.length > 0) {
+            save(KEYS.ANNOUNCEMENTS, ann);
+          }
+        });
+
+        // Real-time listener for fee payments
+        FirestoreService.subscribeToFeePayments((fees) => {
+          if (fees && fees.length > 0) {
+            save(KEYS.FEE_PAYMENTS, fees);
+          }
+        });
+      } catch (e) {
+        console.warn('Firestore initial sync notice:', e);
+      }
+    }
   },
 
   getConfig(): SchoolConfig {
@@ -106,6 +150,7 @@ export const StorageService = {
   },
   saveConfig(cfg: SchoolConfig): void {
     save(KEYS.CONFIG, cfg);
+    FirestoreService.saveConfig(cfg).catch(() => {});
   },
 
   // Students
@@ -134,6 +179,7 @@ export const StorageService = {
       list.unshift(student);
     }
     save(KEYS.STUDENTS, list);
+    FirestoreService.saveStudent(student).catch(() => {});
   },
   updateStudentPhoto(studentNumber: string, photoUrl: string): boolean {
     const list = this.getStudents();
@@ -141,6 +187,7 @@ export const StorageService = {
     if (student) {
       student.photoUrl = photoUrl;
       save(KEYS.STUDENTS, list);
+      FirestoreService.saveStudent(student).catch(() => {});
       return true;
     }
     return false;
@@ -151,6 +198,7 @@ export const StorageService = {
     if (student) {
       student.password = newPassword;
       save(KEYS.STUDENTS, list);
+      FirestoreService.saveStudent(student).catch(() => {});
       return true;
     }
     return false;
@@ -161,6 +209,7 @@ export const StorageService = {
     if (student) {
       student.status = status;
       save(KEYS.STUDENTS, list);
+      FirestoreService.saveStudent(student).catch(() => {});
     }
   },
 
@@ -190,10 +239,12 @@ export const StorageService = {
       list.unshift(staff);
     }
     save(KEYS.STAFF, list);
+    FirestoreService.saveStaff(staff).catch(() => {});
   },
   deleteStaff(staffId: string): void {
     const list = this.getStaff().filter(s => s.id !== staffId && s.staffId !== staffId);
     save(KEYS.STAFF, list);
+    FirestoreService.deleteStaff(staffId).catch(() => {});
   },
   updateStaffPassword(staffIdentifier: string, newPassword: string): boolean {
     const list = this.getStaff();
@@ -203,6 +254,7 @@ export const StorageService = {
     if (staff) {
       staff.password = newPassword;
       save(KEYS.STAFF, list);
+      FirestoreService.saveStaff(staff).catch(() => {});
       return true;
     }
     return false;
@@ -228,9 +280,11 @@ export const StorageService = {
     const adm = this.getAdmin();
     adm.password = newPassword;
     save(KEYS.ADMIN, adm);
+    FirestoreService.saveAdministrator(adm).catch(() => {});
   },
   saveAdmin(admin: Administrator): void {
     save(KEYS.ADMIN, admin);
+    FirestoreService.saveAdministrator(admin).catch(() => {});
   },
 
   // Results
@@ -246,6 +300,7 @@ export const StorageService = {
       list.unshift(result);
     }
     save(KEYS.RESULTS, list);
+    FirestoreService.saveResult(result).catch(() => {});
   },
   getStudentResults(studentNumber: string, session?: string, term?: string): StudentResultRecord[] {
     const all = this.getResults();
@@ -265,6 +320,7 @@ export const StorageService = {
     const list = this.getApplications();
     list.unshift(app);
     save(KEYS.APPLICATIONS, list);
+    FirestoreService.saveApplication(app).catch(() => {});
   },
   updateApplicationStatus(
     appId: string,
@@ -279,6 +335,7 @@ export const StorageService = {
       if (notes) app.decisionNotes = notes;
       if (assignedStudentNumber) app.assignedStudentNumber = assignedStudentNumber;
       save(KEYS.APPLICATIONS, list);
+      FirestoreService.saveApplication(app).catch(() => {});
 
       // If approved and assigned student number, automatically create the active student record!
       if (status === 'Approved' && assignedStudentNumber) {
@@ -320,6 +377,12 @@ export const StorageService = {
     if (idx >= 0) list[idx] = cls;
     else list.push(cls);
     save(KEYS.CLASSES, list);
+    FirestoreService.saveClass(cls).catch(() => {});
+  },
+  deleteClass(classId: string): void {
+    const list = this.getClasses().filter(c => c.id !== classId);
+    save(KEYS.CLASSES, list);
+    FirestoreService.deleteClass(classId).catch(() => {});
   },
 
   // Announcements
@@ -330,10 +393,12 @@ export const StorageService = {
     const list = this.getAnnouncements();
     list.unshift(ann);
     save(KEYS.ANNOUNCEMENTS, list);
+    FirestoreService.saveAnnouncement(ann).catch(() => {});
   },
   deleteAnnouncement(id: string): void {
     const list = this.getAnnouncements().filter(a => a.id !== id);
     save(KEYS.ANNOUNCEMENTS, list);
+    FirestoreService.deleteAnnouncement(id).catch(() => {});
   },
 
   // Gallery
@@ -358,6 +423,7 @@ export const StorageService = {
     const list = this.getFeePayments();
     list.unshift(payment);
     save(KEYS.FEE_PAYMENTS, list);
+    FirestoreService.saveFeePayment(payment).catch(() => {});
   },
   updateFeePaymentStatus(paymentId: string, status: FeePayment['status']): void {
     const list = this.getFeePayments();
@@ -365,6 +431,7 @@ export const StorageService = {
     if (item) {
       item.status = status;
       save(KEYS.FEE_PAYMENTS, list);
+      FirestoreService.saveFeePayment(item).catch(() => {});
     }
   },
 

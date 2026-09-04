@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PageId, Student, Staff, Administrator } from './types';
 import { StorageService } from './services/storage';
+import { FirebaseAuthService } from './firebase/authService';
 
 // Common components
 import { Navbar } from './components/common/Navbar';
@@ -34,9 +35,27 @@ export default function App() {
 
   // Initialize storage seeds and restore session if any
   useEffect(() => {
-    StorageService.init();
+    StorageService.init().then(() => {
+      // Re-check stored sessions after cloud sync
+      const storedStudentNo = localStorage.getItem('tayo_session_student');
+      if (storedStudentNo) {
+        const std = StorageService.getStudentByNumber(storedStudentNo);
+        if (std) setCurrentStudent(std);
+      }
 
-    // Check stored sessions
+      const storedStaffId = localStorage.getItem('tayo_session_staff');
+      if (storedStaffId) {
+        const stf = StorageService.getStaffById(storedStaffId);
+        if (stf) setCurrentStaff(stf);
+      }
+
+      const storedAdmin = localStorage.getItem('tayo_session_admin');
+      if (storedAdmin === 'true') {
+        setCurrentAdmin(StorageService.getAdmin());
+      }
+    });
+
+    // Check stored sessions immediately
     const storedStudentNo = localStorage.getItem('tayo_session_student');
     if (storedStudentNo) {
       const std = StorageService.getStudentByNumber(storedStudentNo);
@@ -53,6 +72,9 @@ export default function App() {
     if (storedAdmin === 'true') {
       setCurrentAdmin(StorageService.getAdmin());
     }
+
+    const unsubscribe = FirebaseAuthService.onAuthStateChanged(() => {});
+    return () => unsubscribe();
   }, []);
 
   const handleNavigate = (page: PageId) => {
@@ -92,7 +114,12 @@ export default function App() {
   };
 
   // Logout Handlers
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await FirebaseAuthService.logout();
+    } catch (e) {
+      console.warn('Firebase logout notice:', e);
+    }
     setCurrentStudent(null);
     setCurrentStaff(null);
     setCurrentAdmin(null);

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Users, Lock, AlertCircle, ArrowRight } from 'lucide-react';
+import { Users, Lock, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { Staff, PageId } from '../../types';
-import { StorageService } from '../../services/storage';
+import { FirebaseAuthService } from '../../firebase/authService';
 
 interface StaffLoginPageProps {
   onLoginSuccess: (staff: Staff) => void;
@@ -15,18 +15,21 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsLoading(true);
 
-    const staff = StorageService.authenticateStaff(identifier.trim(), password);
-    if (!staff) {
-      setError('Invalid Staff ID / Email or Password. Please try again.');
-      return;
+    try {
+      const staff = await FirebaseAuthService.loginStaff(identifier.trim(), password);
+      onLoginSuccess(staff);
+    } catch (err: any) {
+      setError(err.message || 'Invalid Staff ID / Email or Password. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-
-    onLoginSuccess(staff);
   };
 
   return (
@@ -88,10 +91,20 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({
 
             <button
               type="submit"
-              className="w-full py-4 rounded-xl bg-[#008751] hover:bg-[#007043] text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              disabled={isLoading}
+              className="w-full py-4 rounded-xl bg-[#008751] hover:bg-[#007043] disabled:opacity-60 text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>Login to Staff Dashboard</span>
-              <ArrowRight className="w-4 h-4" />
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Verifying Credentials via Firebase...</span>
+                </>
+              ) : (
+                <>
+                  <span>Login to Staff Dashboard</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 

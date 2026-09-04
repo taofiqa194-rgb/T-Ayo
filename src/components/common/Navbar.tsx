@@ -18,10 +18,16 @@ import { PageId, UserRole } from '../../types';
 interface NavbarProps {
   currentPage: PageId;
   onNavigate: (page: PageId) => void;
-  currentUser: {
+  currentUser?: {
     role: UserRole;
     name: string;
-    identifier: string;
+    identifier?: string;
+  } | null;
+  loggedInUser?: {
+    role: UserRole;
+    name: string;
+    dashboardPage?: PageId;
+    identifier?: string;
   } | null;
   onLogout: () => void;
 }
@@ -29,9 +35,11 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   currentPage,
   onNavigate,
-  currentUser,
+  currentUser: propCurrentUser,
+  loggedInUser,
   onLogout
 }) => {
+  const currentUser = loggedInUser || propCurrentUser || null;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [portalDropdownOpen, setPortalDropdownOpen] = useState(false);
 

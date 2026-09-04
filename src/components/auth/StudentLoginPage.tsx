@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { GraduationCap, Lock, KeyRound, AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { GraduationCap, Lock, KeyRound, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { Student, PageId } from '../../types';
-import { StorageService } from '../../services/storage';
+import { FirebaseAuthService } from '../../firebase/authService';
 
 interface StudentLoginPageProps {
   onLoginSuccess: (student: Student) => void;
@@ -15,23 +15,26 @@ export const StudentLoginPage: React.FC<StudentLoginPageProps> = ({
   const [studentNumber, setStudentNumber] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsLoading(true);
 
-    const student = StorageService.authenticateStudent(studentNumber.trim(), password);
-    if (!student) {
-      setError('Invalid Student Number or Password. Please verify and try again.');
-      return;
+    try {
+      const student = await FirebaseAuthService.loginStudent(studentNumber.trim(), password);
+      if (student.status === 'Suspended') {
+        setError("Your student account is currently suspended. Please contact the Principal's Office.");
+        setIsLoading(false);
+        return;
+      }
+      onLoginSuccess(student);
+    } catch (err: any) {
+      setError(err.message || 'Invalid Student Number or Password. Please verify and try again.');
+    } finally {
+      setIsLoading(false);
     }
-
-    if (student.status === 'Suspended') {
-      setError('Your student account is currently suspended. Please contact the Principal\'s Office.');
-      return;
-    }
-
-    onLoginSuccess(student);
   };
 
   return (
@@ -93,10 +96,20 @@ export const StudentLoginPage: React.FC<StudentLoginPageProps> = ({
 
             <button
               type="submit"
-              className="w-full py-4 rounded-xl bg-[#003087] hover:bg-[#002568] text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+              disabled={isLoading}
+              className="w-full py-4 rounded-xl bg-[#003087] hover:bg-[#002568] disabled:opacity-60 text-white font-black text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>Login to Student Dashboard</span>
-              <ArrowRight className="w-4 h-4" />
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Authenticating via Firebase...</span>
+                </>
+              ) : (
+                <>
+                  <span>Login to Student Dashboard</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 

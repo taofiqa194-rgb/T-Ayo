@@ -6,6 +6,7 @@ import {
   SubjectResult
 } from '../../types';
 import { StorageService } from '../../services/storage';
+import { FirebaseStorageService } from '../../firebase/storageService';
 import { computeNigerianGrade } from '../../data/initialData';
 import {
   BookOpen,
@@ -59,19 +60,21 @@ export const StaffDashboard: React.FC<StaffDashboardProps> = ({
   const [editPhotoUrl, setEditPhotoUrl] = useState(staff.photoUrl);
   const [staffProfileMsg, setStaffProfileMsg] = useState<string | null>(null);
 
-  const handleStaffPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleStaffPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
         alert('File size exceeds 2MB limit.');
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        setEditPhotoUrl(base64);
-      };
-      reader.readAsDataURL(file);
+      try {
+        setStaffProfileMsg('Uploading photograph to Firebase Storage...');
+        const photoUrl = await FirebaseStorageService.uploadStaffPassport(staff.staffId, file);
+        setEditPhotoUrl(photoUrl);
+        setStaffProfileMsg('Photograph uploaded to Firebase Storage! Click Save Profile to apply.');
+      } catch (err) {
+        console.warn('Firebase staff photo upload notice:', err);
+      }
     }
   };
 

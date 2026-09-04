@@ -1,0 +1,186 @@
+{
+  "entities": {
+    "students": {
+      "title": "Students",
+      "description": "Enrolled student records including academic info, credentials, and guardian details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentNumber": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "middleName": { "type": "string" },
+        "gender": { "type": "string" },
+        "dateOfBirth": { "type": "string" },
+        "section": { "type": "string" },
+        "className": { "type": "string" },
+        "arm": { "type": "string" },
+        "house": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "status": { "type": "string" },
+        "admissionYear": { "type": "number" },
+        "guardianName": { "type": "string" },
+        "guardianPhone": { "type": "string" },
+        "guardianEmail": { "type": "string" },
+        "guardianRelationship": { "type": "string" },
+        "address": { "type": "string" },
+        "stateOfOrigin": { "type": "string" },
+        "authUid": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["studentNumber", "firstName", "lastName", "className", "section"]
+    },
+    "staff": {
+      "title": "Staff",
+      "description": "Teaching and administrative staff members of T'AYO School",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "email": { "type": "string" },
+        "fullName": { "type": "string" },
+        "gender": { "type": "string" },
+        "phone": { "type": "string" },
+        "qualification": { "type": "string" },
+        "roleTitle": { "type": "string" },
+        "assignedSection": { "type": "string" },
+        "assignedClasses": { "type": "array", "items": { "type": "string" } },
+        "assignedSubjects": { "type": "array", "items": { "type": "string" } },
+        "photoUrl": { "type": "string" },
+        "address": { "type": "string" },
+        "authUid": { "type": "string" }
+      },
+      "required": ["staffId", "fullName", "email", "roleTitle"]
+    },
+    "administrators": {
+      "title": "Administrators",
+      "description": "Executive administration profiles with root privileges",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "adminId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "authUid": { "type": "string" }
+      },
+      "required": ["adminId", "fullName", "email", "role"]
+    },
+    "admission_applications": {
+      "title": "Admission Applications",
+      "description": "Prospective student admission applications and uploaded documents",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "applicationNumber": { "type": "string" },
+        "fullName": { "type": "string" },
+        "dateOfBirth": { "type": "string" },
+        "gender": { "type": "string" },
+        "section": { "type": "string" },
+        "classApplyingFor": { "type": "string" },
+        "previousSchool": { "type": "string" },
+        "parentName": { "type": "string" },
+        "parentRelationship": { "type": "string" },
+        "parentPhone": { "type": "string" },
+        "parentEmail": { "type": "string" },
+        "parentOccupation": { "type": "string" },
+        "residentialAddress": { "type": "string" },
+        "stateOfOrigin": { "type": "string" },
+        "passportPhoto": { "type": "string" },
+        "birthCertificateUrl": { "type": "string" },
+        "reportCardUrl": { "type": "string" },
+        "status": { "type": "string" },
+        "submittedAt": { "type": "string" }
+      },
+      "required": ["applicationNumber", "fullName", "classApplyingFor", "parentName", "parentPhone"]
+    },
+    "classes": {
+      "title": "Classes",
+      "description": "Primary and Secondary classroom structures",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "section": { "type": "string" },
+        "classTeacherName": { "type": "string" },
+        "classTeacherId": { "type": "string" },
+        "totalStudents": { "type": "number" },
+        "capacity": { "type": "number" }
+      },
+      "required": ["name", "section"]
+    },
+    "results": {
+      "title": "Results",
+      "description": "Termly academic report cards and continuous assessments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentNumber": { "type": "string" },
+        "studentName": { "type": "string" },
+        "className": { "type": "string" },
+        "session": { "type": "string" },
+        "term": { "type": "string" },
+        "subjects": { "type": "array" },
+        "overallTotal": { "type": "number" },
+        "overallAverage": { "type": "number" },
+        "classPosition": { "type": "string" },
+        "teacherRemark": { "type": "string" },
+        "principalRemark": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["studentNumber", "className", "session", "term"]
+    },
+    "announcements": {
+      "title": "Announcements",
+      "description": "School news, circulars, and notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string" },
+        "category": { "type": "string" },
+        "priority": { "type": "string" }
+      },
+      "required": ["title", "content", "date"]
+    },
+    "academic_sessions": {
+      "title": "Academic Sessions",
+      "description": "School academic calendar sessions and term states",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionName": { "type": "string" },
+        "activeTerm": { "type": "string" },
+        "isCurrent": { "type": "boolean" },
+        "resumptionDate": { "type": "string" },
+        "vacationDate": { "type": "string" }
+      },
+      "required": ["sessionName", "activeTerm"]
+    },
+    "fee_payments": {
+      "title": "Fee Payments",
+      "description": "School fee deposits into Moniepoint account (Abbas Taofiq Ayomide - 9076930244) and clearances",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentNumber": { "type": "string" },
+        "studentName": { "type": "string" },
+        "className": { "type": "string" },
+        "session": { "type": "string" },
+        "term": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" },
+        "payerName": { "type": "string" },
+        "transactionRef": { "type": "string" },
+        "bankName": { "type": "string" },
+        "paymentDate": { "type": "string" }
+      },
+      "required": ["studentNumber", "amount", "transactionRef", "status"]
+    }
+  }
+}

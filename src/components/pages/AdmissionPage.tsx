@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { AdmissionApplication } from '../../types';
 import { StorageService } from '../../services/storage';
+import { FirebaseStorageService } from '../../firebase/storageService';
 
 export const AdmissionPage: React.FC = () => {
   const config = StorageService.getConfig();
@@ -45,29 +46,46 @@ export const AdmissionPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Handle Photo Upload
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
         setErrorMsg('Passport photo must be under 2MB.');
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPassportPhoto(reader.result as string);
+      try {
+        setErrorMsg('Uploading passport photo to Firebase Storage...');
+        const downloadUrl = await FirebaseStorageService.uploadStudentPassport(`admission-${Date.now()}`, file);
+        setPassportPhoto(downloadUrl);
         setErrorMsg(null);
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        // Fallback to local data url
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPassportPhoto(reader.result as string);
+          setErrorMsg(null);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  const handleDocumentChange = (type: 'birth' | 'report', e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocumentChange = async (type: 'birth' | 'report', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (type === 'birth') {
-        setBirthCertName(file.name);
-      } else {
-        setReportCardName(file.name);
+      try {
+        await FirebaseStorageService.uploadAdmissionDocument(`temp_app_${Date.now()}`, type, file);
+        if (type === 'birth') {
+          setBirthCertName(file.name);
+        } else {
+          setReportCardName(file.name);
+        }
+      } catch (err) {
+        if (type === 'birth') {
+          setBirthCertName(file.name);
+        } else {
+          setReportCardName(file.name);
+        }
       }
     }
   };

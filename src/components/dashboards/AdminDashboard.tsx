@@ -10,6 +10,7 @@ import {
   FeePayment
 } from '../../types';
 import { StorageService } from '../../services/storage';
+import { FirebaseStorageService } from '../../firebase/storageService';
 import { generateCompleteSqlDump, MYSQL_SCHEMA_DDL, PHP_BACKEND_SAMPLE } from '../../services/sqlExporter';
 import {
   Users,
@@ -90,18 +91,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [adminRole, setAdminRole] = useState(admin.role);
   const [adminPhotoUrl, setAdminPhotoUrl] = useState(admin.photoUrl);
 
-  const handleAdminPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAdminPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
         alert('File size exceeds 2MB limit.');
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAdminPhotoUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        showMsg('Uploading administrator photograph to Firebase Storage...');
+        const photoUrl = await FirebaseStorageService.uploadAdminPassport(admin.adminId, file);
+        setAdminPhotoUrl(photoUrl);
+        showMsg('Administrator photograph uploaded to Firebase Storage! Click Save Profile to apply.');
+      } catch (err) {
+        console.warn('Firebase admin photo upload notice:', err);
+      }
     }
   };
 

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Student, StudentResultRecord, Announcement } from '../../types';
 import { StorageService } from '../../services/storage';
+import { FirebaseStorageService } from '../../firebase/storageService';
 import { ReportCardModal } from './ReportCardModal';
 import { FeePaymentSection } from './FeePaymentSection';
 
@@ -78,26 +79,27 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     a => a.targetAudience === 'All' || a.targetAudience === 'Students'
   );
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
         setPhotoUploadMsg('File too large! Please upload a photo under 2MB.');
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        setPhotoPreview(base64);
-        const success = StorageService.updateStudentPhoto(student.studentNumber, base64);
+      setPhotoUploadMsg('Uploading photo to Firebase Storage...');
+      try {
+        const photoUrl = await FirebaseStorageService.uploadStudentPassport(student.studentNumber, file);
+        setPhotoPreview(photoUrl);
+        const success = StorageService.updateStudentPhoto(student.studentNumber, photoUrl);
         if (success) {
-          const updated = { ...student, photoUrl: base64 };
+          const updated = { ...student, photoUrl };
           onUpdateStudent(updated);
-          setPhotoUploadMsg('Passport photograph successfully updated!');
+          setPhotoUploadMsg('Passport photograph saved and uploaded to Firebase Storage!');
           setTimeout(() => setPhotoUploadMsg(null), 4000);
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.warn('Firebase upload notice:', err);
+      }
     }
   };
 

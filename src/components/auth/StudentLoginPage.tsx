@@ -113,6 +113,38 @@ export const StudentLoginPage: React.FC<StudentLoginPageProps> = ({
             </button>
           </form>
 
+          {/* Demo Credentials Quick Fill */}
+          <div className="mt-4 p-3.5 bg-blue-50/70 border border-blue-100 rounded-xl">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider">Demo Student Logins:</span>
+              <span className="text-[10px] text-blue-600 font-mono bg-blue-100/60 px-1.5 py-0.5 rounded">Default Password: password123</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setStudentNumber('TAYO/2024/014');
+                  setPassword('password123');
+                }}
+                className="text-left p-2 rounded-lg bg-white border border-blue-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all cursor-pointer"
+              >
+                <p className="font-bold text-slate-800 text-[11px] truncate">Oluwaseun (SSS 2)</p>
+                <p className="font-mono text-[10px] text-blue-700">TAYO/2024/014</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStudentNumber('TAYO/2024/028');
+                  setPassword('password123');
+                }}
+                className="text-left p-2 rounded-lg bg-white border border-blue-200 hover:border-blue-400 hover:bg-blue-50/50 transition-all cursor-pointer"
+              >
+                <p className="font-bold text-slate-800 text-[11px] truncate">Chidubem (Pri 5)</p>
+                <p className="font-mono text-[10px] text-blue-700">TAYO/2024/028</p>
+              </button>
+            </div>
+          </div>
+
           <div className="pt-3 border-t border-slate-100 text-center text-xs text-slate-400">
             <span>Forgot credentials? Contact school registry at <strong className="text-slate-600 font-mono">09076930244</strong></span>
           </div>

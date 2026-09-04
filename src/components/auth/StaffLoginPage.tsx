@@ -108,6 +108,38 @@ export const StaffLoginPage: React.FC<StaffLoginPageProps> = ({
             </button>
           </form>
 
+          {/* Demo Staff Credentials Quick Fill */}
+          <div className="mt-4 p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-xl">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider">Demo Staff Logins:</span>
+              <span className="text-[10px] text-emerald-700 font-mono bg-emerald-100/70 px-1.5 py-0.5 rounded">Default Password: password123</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setIdentifier('STF-014');
+                  setPassword('password123');
+                }}
+                className="text-left p-2 rounded-lg bg-white border border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50/50 transition-all cursor-pointer"
+              >
+                <p className="font-bold text-slate-800 text-[11px] truncate">Mr. Babatunde Alabi</p>
+                <p className="font-mono text-[10px] text-emerald-700">STF-014 (Maths)</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIdentifier('STF-008');
+                  setPassword('password123');
+                }}
+                className="text-left p-2 rounded-lg bg-white border border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50/50 transition-all cursor-pointer"
+              >
+                <p className="font-bold text-slate-800 text-[11px] truncate">Mrs. Aisha Mohammed</p>
+                <p className="font-mono text-[10px] text-emerald-700">STF-008 (Languages)</p>
+              </button>
+            </div>
+          </div>
+
           <div className="pt-3 border-t border-slate-100 text-center text-xs text-slate-400">
             <span>Faculty assistance or password reset? Contact administration at <strong className="text-slate-600 font-mono">09076930244</strong></span>
           </div>

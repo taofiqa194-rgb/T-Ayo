@@ -108,6 +108,28 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
             </button>
           </form>
 
+          {/* Demo Admin Credentials Quick Fill */}
+          <div className="mt-4 p-3.5 bg-purple-50/70 border border-purple-100 rounded-xl">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-purple-900 uppercase tracking-wider">Demo Administrator:</span>
+              <span className="text-[10px] text-purple-700 font-mono bg-purple-100/70 px-1.5 py-0.5 rounded">ID: ADM-001</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIdentifier('ADM-001');
+                setPassword('adminpassword');
+              }}
+              className="w-full text-left p-2.5 rounded-lg bg-white border border-purple-200 hover:border-purple-400 hover:bg-purple-50/50 transition-all cursor-pointer flex items-center justify-between"
+            >
+              <div>
+                <p className="font-bold text-slate-800 text-xs">Dr. (Mrs.) Folashade O. Adeyinka</p>
+                <p className="font-mono text-[10px] text-purple-700">ADM-001 • Password: adminpassword</p>
+              </div>
+              <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-1 rounded">Click to Fill</span>
+            </button>
+          </div>
+
           <div className="pt-3 border-t border-slate-100 text-center text-xs text-slate-400">
             <span>Administrative technical support hotline: <strong className="text-slate-600 font-mono">09076930244</strong></span>
           </div>
